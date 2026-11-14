@@ -1,251 +1,32 @@
-<h1 align="center">PES13Recomp</h1>
+# ⚽ PES 2013 para Windows
 
-<p align="center">
-  <b>An unofficial native port of Pro Evolution Soccer 2013 (Xbox 360), built by static recompilation, for Windows and iPad.</b>
-</p>
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.1.0-lobby/PES13-Preview-Windows.zip)
 
-<p align="center">
-  <img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue">
-  <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-0078D6">
-  <img alt="iPadOS arm64" src="https://img.shields.io/badge/iPadOS-arm64%20(playable)-555555">
-  <img alt="Vulkan" src="https://img.shields.io/badge/renderer-Vulkan-AC162C">
-  <img alt="Metal via MoltenVK" src="https://img.shields.io/badge/iPad-Metal%20via%20MoltenVK-999999">
-  <img alt="Built with XenonRecomp" src="https://img.shields.io/badge/built%20with-XenonRecomp-6F42C1">
-</p>
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.1.0-lobby/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.1.0-lobby)
 
-<p align="center">
-  <img src="docs/images/match.png" width="49%" alt="Exhibition match in play">
-  <img src="docs/images/replay.png" width="49%" alt="Goalkeeper save in a replay">
-  <img src="docs/images/kickoff.png" width="98%" alt="Kick-off at Wembley">
-</p>
-<p align="center"><sub>Running natively on Windows (Vulkan). Screenshots from the author's own copy of the game.</sub></p>
+## Cómo arrancar
 
-> [!NOTE]
-> This fork includes a Windows preview of the F1 lobby, public rooms, private invitations and
-> F2 chat. The coordinator runs locally and pairs two game windows on the same PC.
-> [Guía de compilación y prueba en español](docs/lobby-preview-es.md).
+1. **Descargá el ZIP de arriba y extraelo** en una carpeta corta, como `C:\PES13`. Dejá unos **10 GB libres** para preparar el juego. Usá Windows de 64 bits y una placa de video con soporte para Vulkan. Para compilar, se recomiendan 16 GB de RAM.
+2. **Instalá las herramientas una sola vez.** En Build Tools 2022 marcá **Desarrollo para el escritorio con C++** y asegurate de incluir **Clang para Windows**, **CMake/Ninja** y el **SDK de Windows**. Para el lobby instalá **Python 3.10 o posterior** y agregalo al PATH. [Build Tools 2022](https://aka.ms/vs/17/release/vs_BuildTools.exe) · [Python para Windows](https://www.python.org/downloads/windows/).
+3. **Abrí `Preparar y compilar.cmd`** y, en el selector, elegí **tu propia ISO de PES 2013 para Xbox 360, edición Europa (Es,Pt)**. Esa edición trae español. La copia probada figura como `PES 2013 - Pro Evolution Soccer (Europe) (Es,Pt).iso`.
+4. **Esperá a que termine** y abrí **`Jugar PES 2013.exe`** con doble clic. La primera compilación tarda. El ZIP trae el código, las dependencias y el asistente. Cada persona genera su ejecutable con su propia ISO.
 
-> [!IMPORTANT]
-> **You must own the game.** This repository contains no game code or game files, and no
-> builds of the game are distributed. You build it yourself from your own dump of the PES 2013
-> Xbox 360 disc (Europe). Pro Evolution Soccer 2013 belongs to Konami; this project is not
-> affiliated with Konami or Microsoft.
+## Probá el lobby y el chat
 
-> [!WARNING]
-> **Work in progress.** It is playable on Windows (menus, training, exhibition matches, sound,
-> saves), but expect bugs. On iPad (M2) matches are playable at 40-45 fps with touch controls or a
-> controller; set pieces, cutscenes and the Game Plan screen still drop to 10-25 fps.
+> **Estado de esta versión.** Las salas, las invitaciones y el chat se prueban con dos ventanas en la misma PC. El amistoso entre dos PCs por Internet y el rollback siguen en desarrollo.
 
-## Contents
+1. Abrí dos ventanas de `Jugar PES 2013.exe`, apretá **F1** en cada una y conectate con apodos distintos. Si ambas usan el mismo apodo guardado, tocá **Desconectarme** en una, cambialo y volvé a conectarte.
+2. En una ventana elegí **Crear sala pública** y en la otra elegí la sala y tocá **Unirme**. Para probar una invitación privada, seleccioná al otro jugador, tocá **Invitar** y aceptá desde la otra ventana.
+3. Cuando figure el rival, apretá **F2** para escribir y **Enter** para enviar. Probá `/casi`, `/var` o `/payaso` para tirar un emoji que aparece en las dos ventanas. **Esc** te devuelve al juego.
 
-- [Features](#features)
-- [Status](#status)
-- [Building and playing on Windows](#building-and-playing-on-windows)
-- [iPad](#ipad)
-- [Controls](#controls)
-- [Files and folders](#files-and-folders)
-- [Reporting a problem](#reporting-a-problem)
-- [How it works](#how-it-works)
-- [Credits](#credits)
-- [License](#license)
+## Si te trabás
 
-## Features
+- **El asistente pide herramientas.** Abrí Visual Studio Installer, buscá Build Tools y usá **Modificar** para agregar los componentes del paso 2.
+- **La ISO no pasa la verificación.** Revisá que sea la edición **Europa (Es,Pt) de Xbox 360**. El asistente verifica que coincida con la versión usada para compilar.
+- **F1 no conecta.** Abrí una terminal nueva y probá `python --version`. Si Windows abre la tienda o no reconoce el comando, instalá Python desde el enlace del paso 2 y agregalo al PATH.
 
-| | |
-|---|---|
-| **60 fps** | Matches run at a locked 60 fps on Windows; set pieces and goal kicks are locked to 30 fps by the game itself |
-| **Native code** | All ~67,000 PowerPC functions of the game are translated ahead of time to C++, so there is no emulator and no JIT. iPadOS forbids JIT. |
-| **Vulkan renderer** | Renders at the GPU command-processor level, with a model of the Xbox 360's EDRAM. Xenos shaders are translated to SPIR-V on first use and cached. |
-| **iPad** | Uses the same renderer, running on Metal through MoltenVK |
-| **Aspect ratio** | Keeps the game's 16:9 picture on any window or screen shape (letterbox / pillarbox) |
-| **Sound** | XAudio implemented on miniaudio |
-| **Saves and profiles** | Profiles, save data, notifications and the Xbox on-screen keyboard (player names) work |
-| **Controllers** | Xbox, PlayStation and MFi controllers via SDL / XInput, plus a keyboard; on-screen touch controls on iPad |
-| **Performance overlay** | On iPad, live FPS, frame time, memory, thermal state and battery in the letterbox bar below the picture |
+## Código y créditos
 
-## Status
+Para compilar desde un clon del repositorio, seguí la [guía técnica en español](docs/lobby-preview-es.md). El [estado del desarrollo](docs/online-development.md) explica qué se probó del multijugador.
 
-| Milestone | State |
-|---|---|
-| Recompiled code compiles | ✅ Done |
-| Boots on Windows | ✅ Done |
-| Graphics | ✅ Menus, training, matches and cutscenes render correctly |
-| Menus, input, matches | ✅ Windows: training, exhibition matches, sound, saves (60 fps; set pieces and goal kicks locked to 30 fps by the game) |
-| iPad | 🚧 Playable on an M2 iPad Air: menus, matches, sound, touch controls. Matches run at 40-45 fps; set pieces, cutscenes and the Game Plan screen drop to 10-25 fps (performance work in progress) |
-| Polish | 📋 Planned: anisotropic filtering, FXAA, resolution scaling ([docs/improvements.md](docs/improvements.md)) |
-
-Open bugs are tracked in [docs/listofbugs.md](docs/listofbugs.md).
-
-## Building and playing on Windows
-
-**Requirements:** Visual Studio 2022 with the **C++ Clang tools** (clang-cl and lld; the recompiled
-code needs Clang), CMake ≥ 3.20, Ninja and PowerShell. The Vulkan SDK is optional (validation layers).
-You also need a GPU with Vulkan support and about 16 GB of RAM for the build.
-
-1. **Clone** with submodules:
-
-   ```bat
-   git clone --recursive https://github.com/xamphy/PES13Recomp.git
-   cd PES13Recomp
-   ```
-
-2. **Dump your disc.** Make an ISO of your own PES 2013 disc (Europe), then extract it with the
-   bundled extract-xiso:
-
-   ```bat
-   tools\extract-xiso\artifacts\extract-xiso.exe -d game\files "PES 2013.iso"
-   copy game\files\default.xex game\xex\default.xex
-   ```
-
-3. **Recompile the game code** into `generated/`. This takes a few minutes.
-
-   ```bat
-   tools\build-xenonrecomp.bat
-   powershell -ExecutionPolicy Bypass -File tools\recomp.ps1
-   ```
-
-4. **Build** the runtime and the recompiled code. The first build takes a while (~430 large files).
-
-   ```bat
-   tools\build-runtime.bat          :: -> build\Release\bin\pes13.exe
-   ```
-
-5. **Play:**
-
-   ```bat
-   build\Release\bin\pes13.exe --run
-   ```
-
-The first launch is slower while shaders are translated. After that they are cached in `userdata/`.
-
-## iPad
-
-The iPadOS app is built on macOS, either on a Mac or on a macOS runner in your own **private**
-repository. Because it contains code recompiled from the game, the `.ipa` is never published here.
-Installing it from a Windows PC with AltStore, and copying the game files, is described in
-[docs/IPAD.md](docs/IPAD.md).
-
-The app asks for the `extended-virtual-addressing` and `increased-memory-limit` entitlements. The
-Xbox 360 address space is 4 GB, and a match uses about 1 GB.
-
-**On the device** (M2 iPad Air, installed with Sideloadly and a free Apple ID): the 4 GB reservation
-succeeds and the game is playable - menus, exhibition matches and sound work.
-
-- **Performance (build #17):** matches run at 50-60 fps. Replays, goal celebrations and cutscenes
-  drop to 13-25 fps: they are GPU-bound (33-65 ms of GPU time per frame, ~48 render passes, most of
-  them a single post-processing draw). Free Training runs at 30 fps. The iPad also throttles once its
-  thermal state reaches "serious" (shown in the overlay). Reducing render passes is the current focus.
-- **Performance work done:** the game's main thread and the command processor ask iPadOS for
-  performance cores (thread QoS). Per-draw GPU timestamps are off on Apple: Metal samples counters only
-  between passes, so each one split a render pass and made matches drop to ~25 fps; only the frame
-  start / end are timed now. Asynchronous MoltenVK submits were tried and reverted. A `[passes]` log
-  line shows why render passes end and how much they load and store. The status bar is hidden.
-  Thermal state and Low Power Mode changes are logged. Untested performance work goes to the
-  `ipad-perf` branch first; `main` keeps the best build tested on the iPad.
-- **Fixed:** files with capitals in their names (e.g. the main menu background movies) were not
-  found on the iPad, whose file system is case-sensitive. Paths now match ignoring case.
-- **Touch controls:** a floating left stick, D-pad, A/B/X/Y, shoulders, triggers, Back/Start and
-  stick clicks drawn over the picture. They hide while a Bluetooth controller is connected.
-- **Performance overlay:** FPS, command-processor time per frame, memory, thermal state and battery,
-  in the black bar under the 16:9 picture.
-- Switching to another app pauses GPU work (iPadOS does not allow it in the background) and the
-  game resumes when you come back.
-
-## Controls
-
-A controller is recommended. On iPad, on-screen touch controls appear when no controller is
-connected. Keyboard controls (player 1, Windows and Mac):
-
-| Xbox 360 | Keyboard | | Xbox 360 | Keyboard |
-|---|---|---|---|---|
-| Left stick | W A S D | | A / B | Space / Esc |
-| Right stick | I J K L | | X / Y | C / V |
-| D-pad | Arrow keys | | LB / RB | Q / E |
-| Start / Back | Enter / Backspace | | LT / RT | Shift / R |
-
-## Files and folders
-
-| Path | What |
-|---|---|
-| `game/xex/default.xex` | the game executable from your disc |
-| `game/files/` | the rest of the disc (`dt*.img`, movies, ...) |
-| `generated/` | code recompiled from your `default.xex` (made by `tools\recomp.ps1`, never committed) |
-| `userdata/` | saves, profile, shader cache, screenshots and logs (created on first run) |
-
-On iPad the same layout lives in the app's Documents folder (Files → On My iPad → PES 2013).
-
-## Reporting a problem
-
-Open an issue and attach the logs of the run:
-
-- Windows: run `pes13.exe --run > userdata\run.log 2> userdata\run.err.log`.
-- iPad: `pes13.log` and `pes13.err.log` are in the app's Documents folder.
-
-A crash prints a `[crash]` line with the guest call stack in the error log. Include what you were
-doing, and for graphics bugs add a screenshot. Please don't attach game files.
-
-Debugging options:
-
-| Option | What it does |
-|---|---|
-| `--diag` | Every 10 s: guest threads with call stacks, GPU state, last command packets |
-| `--dump-frame N` | Prints every draw of frame N with its decoded state and shaders |
-| `PES_CAPTURE=<s>` | Per-draw capture of a frame at second `<s>` (for rendering bugs) |
-| `PES_SHOTS` | Periodic screenshots |
-| `PES_INPUT_SCRIPT` | Scripted controller input ([tools/nav/README.md](tools/nav/README.md)) |
-| `PES_AUDIO_MUTE=1`, `PES_AUDIO_WAV` | Silent runs / record the audio to a file |
-
-## How it works
-
-The game's PowerPC code is translated ahead of time into C++ and compiled for the target CPU:
-
-| Step | Tool | Output |
-|---|---|---|
-| Dump the disc | extract-xiso | `game/xex/default.xex`, `game/files/` |
-| Find functions and jump tables | XenonAnalyse (patched) | `config/pes13.toml`, switch tables |
-| PowerPC → C++ | XenonRecomp (patched) | `generated/ppc_recomp.*.cpp` |
-| Run it | `runtime/` | `pes13.exe` / `pes13.app` |
-
-The **runtime** replaces the Xbox 360 underneath the game:
-
-- `runtime/kernel`: xboxkrnl / xam (threads, sync, memory, timing, profiles, saves, keyboard UI)
-- `runtime/gpu`: the Xenos command processor (PM4) and the Vulkan renderer (EDRAM tiles,
-  resolves, depth copies, Xenia's microcode → SPIR-V shader translator)
-- `runtime/audio`: XAudio on miniaudio
-- `runtime/input`: controllers and keyboard (SDL, XInput)
-- `runtime/fs`: disc and HDD paths mapped to `game/files` and `userdata/`
-
-```
-app/ios/        iPadOS app bundle (Info.plist, entitlements)
-cmake/          build helpers (Xenia shader translator library)
-config/         XenonRecomp config for PES 2013 (function sizes, switch tables)
-docs/           plan, bug and improvement lists, iPad guide, Direct3D survey
-game/           your game dump goes here (ignored by git)
-generated/      recompiled game code, made locally (ignored by git)
-runtime/        the replacement Xbox 360 kernel, GPU, audio, input and file system
-thirdparty/     SDL, Vulkan headers, volk, miniaudio, Xenia, glslang, fmt
-tools/          recompiler forks, build, analysis and navigation scripts, patches
-```
-
-The architecture and plan are described in [docs/PLAN.md](docs/PLAN.md).
-
-## Credits
-
-- [XenonRecomp / XenosRecomp](https://github.com/hedge-dev/XenonRecomp) by hedge-dev: the
-  recompiler. Patched forks are in `tools/`, and the patches are listed in `tools/patches/`.
-- [Xenia](https://github.com/xenia-project/xenia): the Xenos shader translator and much of the GPU
-  knowledge (BSD-3-Clause, see `thirdparty/xenia/LICENSE`)
-- [SDL](https://github.com/libsdl-org/SDL), [MoltenVK](https://github.com/KhronosGroup/MoltenVK),
-  [volk](https://github.com/zeux/volk), [miniaudio](https://github.com/mackron/miniaudio),
-  [glslang](https://github.com/KhronosGroup/glslang), [fmt](https://github.com/fmtlib/fmt),
-  [extract-xiso](https://github.com/XboxDev/extract-xiso)
-- [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp) and the other projects in
-  [awesome-x360-recomps](https://github.com/abduznik/awesome-x360-recomps), for showing the way
-
-## License
-
-The code in this repository is licensed under the [GNU General Public License v3.0](LICENSE).
-Third-party components keep their own licenses (see `thirdparty/` and `tools/`).
-
-Pro Evolution Soccer 2013 © Konami Digital Entertainment. This repository contains no game code or
-game files.
+Basado en [PES13Recomp de xamphy](https://github.com/xamphy/PES13Recomp/tree/70f63ae36a06b630784a25998677953506b55cd7). El código se distribuye bajo [GPL-3.0](LICENSE). Las dependencias conservan sus licencias. Pro Evolution Soccer 2013 pertenece a Konami. Este es un proyecto no oficial.
