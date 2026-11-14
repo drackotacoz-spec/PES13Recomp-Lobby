@@ -65,7 +65,8 @@ class LobbyTests(unittest.TestCase):
         self.assertIsNone(self.ask(self.first, "/state")["match"])
 
     def test_only_one_guest_claims_a_public_room(self):
-        room_id = self.ask(self.first, "/room")["rooms"][0]["id"]
+        endpoint = dict(port=28513, token="ab" * 16)
+        room_id = self.ask(self.first, "/room", endpoint=endpoint)["rooms"][0]["id"]
 
         def join(client):
             try:
@@ -76,7 +77,67 @@ class LobbyTests(unittest.TestCase):
         with ThreadPoolExecutor(2) as pool:
             outcomes = list(pool.map(join, (self.second, self.third)))
         self.assertEqual(outcomes.count(404), 1)
-        self.assertEqual(sum(isinstance(outcome, dict) for outcome in outcomes), 1)
+        winner = [outcome for outcome in outcomes if isinstance(outcome, dict)]
+        self.assertEqual(len(winner), 1)
+        self.assertEqual(winner[0]["peer_connection"], endpoint)
+
+    def test_native_endpoint_is_private_to_the_paired_public_guest(self):
+        endpoint = dict(port=28513, token="ab" * 16)
+        room = self.ask(self.first, "/room", endpoint=endpoint)["rooms"][0]
+        self.assertEqual(room, dict(id=room["id"], host_id=self.first["player"]["id"], host_name="Julián"))
+        self.assertEqual(self.ask(self.second, "/state")["rooms"], [room])
+        self.assertEqual(self.ask(self.third, "/state")["rooms"], [room])
+        self.assertEqual(self.ask(self.first, "/room", endpoint=endpoint)["rooms"], [room])
+
+        with self.assertRaises(LobbyError) as raised:
+            self.ask(self.first, "/room", endpoint=dict(port=28514, token=endpoint["token"]))
+        self.assertEqual(raised.exception.status, 409)
+
+        guest_match = self.ask(self.second, "/join", room_id=room["id"])["match"]
+        host_match = self.ask(self.first, "/state")["match"]
+        self.assertEqual(host_match["id"], guest_match["id"])
+        self.assertEqual(host_match["role"], "host")
+        self.assertEqual(guest_match["role"], "guest")
+        self.assertEqual(host_match["transport"], "native")
+        self.assertEqual(guest_match["transport"], "native")
+        self.assertNotIn("peer_connection", host_match)
+        self.assertEqual(guest_match["peer_connection"], endpoint)
+        self.assertEqual(self.ask(self.second, "/state")["match"], guest_match)
+        self.assertIsNone(self.ask(self.third, "/state")["match"])
+
+        self.ask(self.second, "/leave")
+        self.assertIsNone(self.ask(self.first, "/state")["match"])
+        self.assertIsNone(self.ask(self.second, "/state")["match"])
+        room_id = self.ask(self.first, "/room")["rooms"][0]["id"]
+        self.assertNotEqual(room_id, room["id"])
+        new_match = self.ask(self.second, "/join", room_id=room_id)["match"]
+        self.assertNotIn("transport", new_match)
+        self.assertNotIn("peer_connection", new_match)
+
+    def test_public_endpoint_never_carries_into_private_invitation(self):
+        self.ask(self.first, "/room", endpoint=dict(port=28513, token="ab" * 16))
+        self.ask(self.first, "/invite", player_id=self.second["player"]["id"])
+        invitation = self.ask(self.second, "/state")["invitations"][0]
+        guest = self.ask(self.second, "/respond", invite_id=invitation["id"], accept=True)
+        self.assertEqual(guest["match"]["kind"], "private")
+        self.assertNotIn("peer_connection", guest["match"])
+        self.assertNotIn("transport", guest["match"])
+        self.assertFalse(guest["rooms"])
+
+    def test_native_endpoint_rejects_invalid_fields(self):
+        valid = dict(port=28513, token="ab" * 16)
+        invalid = [
+            None, [], {}, {**valid, "address": "10.0.0.1"},
+            {**valid, "port": 0}, {**valid, "port": 65536}, {**valid, "port": True},
+            {**valid, "port": "28513"}, {**valid, "token": "aa" * 15},
+            {**valid, "token": "AA" * 16}, {**valid, "token": "gg" * 16},
+        ]
+        for endpoint in invalid:
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaises(LobbyError) as raised:
+                    self.ask(self.first, "/room", endpoint=endpoint)
+                self.assertEqual(raised.exception.status, 400)
+        self.assertFalse(self.ask(self.second, "/state")["rooms"])
 
     def test_stale_and_disconnected_players_and_invites_are_removed(self):
         self.ask(self.first, "/invite", player_id=self.second["player"]["id"])
@@ -202,7 +263,7 @@ class HttpTests(unittest.TestCase):
                 client.request("GET", "/health")
                 response = client.getresponse()
                 self.assertEqual(response.status, 200)
-                self.assertEqual(json.load(response), {"service": "pes13-lobby", "version": 2})
+                self.assertEqual(json.load(response), {"service": "pes13-lobby", "version": 3})
                 client.request("POST", "/session", json.dumps({"name": "Niñó"}))
                 response = client.getresponse()
                 self.assertEqual(response.status, 200)
@@ -217,13 +278,20 @@ class HttpTests(unittest.TestCase):
                 self.assertIn("error", json.load(response))
 
                 headers = {"Authorization": f"Bearer {enrolled['token']}"}
-                client.request("POST", "/room", "{}", headers)
-                room_id = json.load(client.getresponse())["rooms"][0]["id"]
+                endpoint = dict(port=28513, token="cd" * 16)
+                client.request("POST", "/room", json.dumps({"endpoint": endpoint}), headers)
+                room = json.load(client.getresponse())["rooms"][0]
+                self.assertNotIn("endpoint", room)
+                room_id = room["id"]
                 client.request("POST", "/session", json.dumps({"name": "Visitante"}))
                 guest = json.load(client.getresponse())
                 guest_headers = {"Authorization": f"Bearer {guest['token']}"}
                 client.request("POST", "/join", json.dumps({"room_id": room_id}), guest_headers)
-                match_id = json.load(client.getresponse())["match"]["id"]
+                guest_match = json.load(client.getresponse())["match"]
+                match_id = guest_match["id"]
+                self.assertEqual(guest_match["peer_connection"], endpoint)
+                client.request("GET", "/state", headers=headers)
+                self.assertNotIn("peer_connection", json.load(client.getresponse())["match"])
                 text = "\U0001f642" * MAX_CHAT_CHARS
                 client.request("POST", "/chat", json.dumps({"match_id": match_id, "text": text}))
                 response = client.getresponse()

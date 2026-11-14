@@ -21,9 +21,11 @@ el arranque. La prueba no llegó al partido.
 ## Lobby local
 
 F1 abre directamente el lobby. El coordinador en tools/online-lobby/lobby.py
-escucha en 127.0.0.1:8766 por defecto. PES lo inicia en segundo plano
+escucha en 127.0.0.1:8767 por defecto. PES lo inicia en segundo plano
 mediante Python 3 si hace falta. El apodo crea una presencia temporal.
-Otro jugador puede entrar directamente a una sala pública.
+Crear una sala pública abre un puerto TCP local temporal para el modo
+experimental. Al unirse, el invitado recibe la conexión desde el lobby
+y empieza el intercambio de mandos sin copiar el código.
 Una invitación privada solo es visible para su destinatario y caduca
 si no se responde. El emparejamiento confirma al rival.
 
@@ -36,7 +38,7 @@ si ya cambió la sala.
 
 Para operar entre redes falta alojar el servicio y definir el transporte
 de juego con conexión negociada o retransmisión. El coordinador local
-no lanza el partido.
+no lanza el partido automáticamente.
 
 ## Pruebas de sincronización
 

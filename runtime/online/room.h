@@ -34,7 +34,8 @@ namespace Online
         bool SetLocalName(std::string_view utf8);
         // An empty address binds to 127.0.0.1. Port 0 selects an available port.
         bool Host(std::string_view bindAddress, uint16_t port);
-        bool WaitForPeer(std::stop_token stop = {});
+        // A public room stays open until its owner leaves or its lobby session ends.
+        bool WaitForPeer(std::stop_token stop = {}, bool expireInvitation = true);
         bool Join(std::string_view address, uint16_t port, std::string_view token, std::stop_token stop = {});
         bool ExchangeInput(uint32_t frame, const PadInput& local, PadInput& remote, std::stop_token stop = {});
         // Repeat on the latency worker. The host schedules a probe in each direction

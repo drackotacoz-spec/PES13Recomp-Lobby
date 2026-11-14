@@ -85,7 +85,7 @@ el juego prepara los shaders. El registro de compilación queda en
 4. Salí de la sala y verificá que ambas ventanas vuelvan a mostrar los jugadores
    disponibles.
 
-Al conectarte, F1 inicia en segundo plano el servicio en `127.0.0.1:8766` si
+Al conectarte, F1 inicia en segundo plano el servicio en `127.0.0.1:8767` si
 hace falta. Ambas ventanas comparten ese servicio. Para probar el coordinador
 de forma independiente, ejecutá:
 

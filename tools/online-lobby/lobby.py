@@ -10,6 +10,7 @@ import re
 import secrets
 import threading
 import time
+from typing import Optional
 import unicodedata
 
 
@@ -26,6 +27,7 @@ CHAT_WINDOW_SECONDS = 3
 CHAT_REACTIONS = frozenset({"jaja", "uy", "payaso", "frio", "casi", "var"})
 ID_PATTERN = re.compile(r"[a-f0-9]{16}", re.ASCII)
 TOKEN_PATTERN = re.compile(r"[a-f0-9]{48}", re.ASCII)
+PEER_TOKEN_PATTERN = re.compile(r"[a-f0-9]{32}", re.ASCII)
 
 
 class LobbyError(Exception):
@@ -51,12 +53,25 @@ class Invite:
     expires: float
 
 
+@dataclass(frozen=True)
+class Endpoint:
+    port: int
+    token: str
+
+
+@dataclass(frozen=True)
+class PublicRoom:
+    id: str
+    endpoint: Optional[Endpoint] = None
+
+
 @dataclass
 class Match:
     id: str
     host: str
     guest: str
     kind: str
+    endpoint: Optional[Endpoint] = None
     messages: deque = field(default_factory=lambda: deque(maxlen=MAX_CHAT_MESSAGES))
 
 
@@ -84,6 +99,16 @@ def identifier(value):
     if not isinstance(value, str) or not ID_PATTERN.fullmatch(value):
         raise LobbyError(400, "El identificador es inválido.")
     return value
+
+
+def room_endpoint(value):
+    fields(value, "port", "token")
+    port, token = value["port"], value["token"]
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise LobbyError(400, "El puerto de la sala es inválido.")
+    if not isinstance(token, str) or not PEER_TOKEN_PATTERN.fullmatch(token):
+        raise LobbyError(400, "La clave de la sala es inválida.")
+    return Endpoint(port, token)
 
 
 def chat_text(value):
@@ -157,12 +182,16 @@ class Lobby:
             peer = self._peer(active, player_id)
             match = dict(id=active.id, peer_id=peer, peer_name=self.players[peer].name,
                          kind=active.kind, role="host" if active.host == player_id else "guest")
+            if active.endpoint:
+                match["transport"] = "native"
+                if player_id == active.guest:
+                    match["peer_connection"] = dict(port=active.endpoint.port, token=active.endpoint.token)
         return dict(
             you=self._player_view(self.players[player_id]),
             players=[self._player_view(player) for player in self.players.values()
                      if player.id != player_id],
-            rooms=[dict(id=room_id, host_id=host, host_name=self.players[host].name)
-                   for host, room_id in self.rooms.items()],
+            rooms=[dict(id=room.id, host_id=host, host_name=self.players[host].name)
+                   for host, room in self.rooms.items()],
             invitations=[dict(id=invite.id, from_id=invite.sender,
                               from_name=self.players[invite.sender].name)
                          for invite in self.invites.values() if invite.recipient == player_id],
@@ -178,9 +207,9 @@ class Lobby:
         if first in self.matches or second in self.matches:
             raise LobbyError(409, "Uno de los jugadores ya tiene pareja.")
 
-    def _pair(self, host, guest, kind):
+    def _pair(self, host, guest, kind, endpoint=None):
         self._available_pair(host, guest)
-        result = Match(secrets.token_hex(8), host, guest, kind)
+        result = Match(secrets.token_hex(8), host, guest, kind, endpoint=endpoint)
         for player_id in (host, guest):
             self.rooms.pop(player_id, None)
             self._forget_invites(player_id)
@@ -232,17 +261,26 @@ class Lobby:
             if path == "/state":
                 fields(payload)
             elif path == "/room":
-                fields(payload)
+                if payload:
+                    fields(payload, "endpoint")
+                    endpoint = room_endpoint(payload["endpoint"])
+                else:
+                    fields(payload)
+                    endpoint = None
                 if player_id in self.matches:
                     raise LobbyError(409, "Salí de la sala actual antes de abrir otra.")
-                self.rooms.setdefault(player_id, secrets.token_hex(8))
+                room = self.rooms.get(player_id)
+                if room is None:
+                    self.rooms[player_id] = PublicRoom(secrets.token_hex(8), endpoint)
+                elif room.endpoint != endpoint:
+                    raise LobbyError(409, "Cerrá la sala pública actual antes de cambiar la conexión.")
             elif path == "/join":
                 fields(payload, "room_id")
                 room_id = identifier(payload["room_id"])
-                host = next((host for host, room in self.rooms.items() if room == room_id), None)
+                host = next((host for host, room in self.rooms.items() if room.id == room_id), None)
                 if not host:
                     raise LobbyError(404, "Esa sala pública ya no está disponible.")
-                self._pair(host, player_id, "public")
+                self._pair(host, player_id, "public", endpoint=self.rooms[host].endpoint)
             elif path == "/invite":
                 fields(payload, "player_id")
                 target = identifier(payload["player_id"])
@@ -323,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_body() if post else {}
             status = 200
             if self.path == "/health":
-                result = {"service": "pes13-lobby", "version": 2}
+                result = {"service": "pes13-lobby", "version": 3}
             else:
                 result = self.server.lobby.request(self.path, payload, self._token())
         except LobbyError as error:
@@ -364,7 +402,7 @@ def serve(host, port, idle_seconds=0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1"])
-    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--idle-seconds", type=int, default=0)
     args = parser.parse_args()
     if args.idle_seconds < 0:

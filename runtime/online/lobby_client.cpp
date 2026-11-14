@@ -1,6 +1,7 @@
 #include "lobby_client.h"
 #include "chat_reactions.h"
 #include "player_profile.h"
+#include "room_dialog.h"
 
 #include <windows.h>
 #include <winhttp.h>
@@ -19,7 +20,7 @@ namespace Online::Lobby
         using Json = nlohmann::json;
         using namespace std::chrono_literals;
         constexpr size_t kMaxResponse = 128 * 1024;
-        constexpr INTERNET_PORT kDefaultPort = 8766;
+        constexpr INTERNET_PORT kDefaultPort = 8767;
 
         struct CloseHttp
         {
@@ -106,7 +107,7 @@ namespace Online::Lobby
                 return LobbyService::Unavailable;
             if (reply.status == 200 && reply.body.is_object() &&
                 reply.body.contains("service") && reply.body["service"] == "pes13-lobby" &&
-                reply.body.contains("version") && reply.body["version"] == 2)
+                reply.body.contains("version") && reply.body["version"] == 3)
                 return LobbyService::Ready;
             return LobbyService::Incompatible;
         }
@@ -228,7 +229,7 @@ namespace Online::Lobby
                 if (health == LobbyService::Incompatible) break;
                 if (WaitForSingleObject(child.get(), 80) != WAIT_TIMEOUT) break;
             } while (!stop.stop_requested() && std::chrono::steady_clock::now() < readyDeadline);
-            return L"No se pudo iniciar el lobby local. Revis\u00e1 que Python 3 funcione y que el puerto 8766 est\u00e9 disponible.";
+            return L"No se pudo iniciar el lobby local. Revis\u00e1 que Python 3 funcione y que el puerto 8767 est\u00e9 disponible.";
         }
 
         bool ReadState(const Json& json, State& state)
@@ -260,6 +261,24 @@ namespace Online::Lobby
                 {
                     next.match = Match{ Widen(match.at("peer_name").get<std::string>()),
                         match.at("kind").get<std::string>(), match.at("id").get<std::string>() };
+                    auto& active = *next.match;
+                    active.nativeInput = active.kind == "public" && match.value("transport", std::string{}) == "native";
+                    if (active.nativeInput)
+                    {
+                        const auto role = match.at("role").get<std::string>();
+                        if (role != "host" && role != "guest") return false;
+                        active.host = role == "host";
+                        if (!active.host)
+                        {
+                            const auto& endpoint = match.at("peer_connection");
+                            const auto port = endpoint.at("port").get<unsigned>();
+                            active.peerToken = endpoint.at("token").get<std::string>();
+                            if (!port || port > 65535 || active.peerToken.size() != 32 ||
+                                active.peerToken.find_first_not_of("0123456789abcdef") != std::string::npos)
+                                return false;
+                            active.peerPort = uint16_t(port);
+                        }
+                    }
                     if (state.match && state.match->id == next.match->id) next.chatError = state.chatError;
                     for (const auto& row : json.at("messages"))
                         next.messages.push_back({ row.at("id").get<uint64_t>(),
@@ -284,8 +303,21 @@ namespace Online::Lobby
 
     State Client::GetState() const
     {
-        std::lock_guard lock(mutex_);
-        return state_;
+        State snapshot;
+        {
+            std::lock_guard lock(mutex_);
+            snapshot = state_;
+        }
+        if (!snapshot.ownRoomId.empty() || (snapshot.match && snapshot.match->nativeInput))
+        {
+            snapshot.publicInput = PublicInputStatus(snapshot.publicInputError);
+            if (snapshot.publicInput == PublicInput::None && snapshot.match)
+            {
+                snapshot.publicInput = PublicInput::Failed;
+                snapshot.publicInputError = L"No se pudo iniciar el amistoso. Sal\u00ed de la sala para volver a intentar.";
+            }
+        }
+        return snapshot;
     }
 
     void Client::Request(Action action, std::string id, std::wstring name)
@@ -321,6 +353,8 @@ namespace Online::Lobby
     void Client::Run(std::stop_token stop)
     {
         std::string token;
+        std::string incomingMatch;
+        std::wstring localName;
         std::wstring lastMessage;
         State current;
         while (!stop.stop_requested())
@@ -342,6 +376,7 @@ namespace Online::Lobby
 
             Reply reply;
             std::wstring setupError;
+            std::wstring expiredRoomError;
             Json payload = Json::object();
             switch (command.action)
             {
@@ -363,12 +398,29 @@ namespace Online::Lobby
                 }
                 break;
             case Action::Refresh:
-                reply = Exchange(L"/state", token);
+                if (!current.ownRoomId.empty() && !current.match &&
+                    PublicInputStatus(expiredRoomError) == PublicInput::Failed)
+                    reply = Exchange(L"/leave", token, &payload);
+                else
+                    reply = Exchange(L"/state", token);
                 break;
             case Action::OpenRoom:
-                reply = Exchange(L"/room", token, &payload);
+                if (!current.ownRoomId.empty())
+                    reply = Exchange(L"/state", token);
+                else if (const auto endpoint = OpenPublicInputRoom(localName, setupError))
+                {
+                    payload["endpoint"] = { {"port", endpoint->port}, {"token", endpoint->token} };
+                    reply = Exchange(L"/room", token, &payload);
+                }
+                else reply.status = 409;
                 break;
             case Action::JoinRoom:
+                if (ManualRoomActive())
+                {
+                    setupError = L"Sal\u00ed de la conexi\u00f3n por c\u00f3digo antes de unirte.";
+                    reply.status = 409;
+                    break;
+                }
                 payload["room_id"] = command.id;
                 reply = Exchange(L"/join", token, &payload);
                 break;
@@ -405,9 +457,11 @@ namespace Online::Lobby
                 const bool success = reply.status >= 200 && reply.status < 300 && ReadState(reply.body, current);
                 if (success)
                 {
+                    if (command.action == Action::Connect) localName = std::move(command.name);
                     if (command.action == Action::Invite) current.message = L"Invitaci\u00f3n enviada.";
                     else if (command.action == Action::Decline) current.message = L"Invitaci\u00f3n rechazada.";
-                    if (requested || current.match) lastMessage = current.message;
+                    else if (!expiredRoomError.empty()) current.message = std::move(expiredRoomError);
+                    if (requested || current.match || !current.message.empty()) lastMessage = current.message;
                     else current.message = lastMessage;
                 }
                 else
@@ -428,10 +482,27 @@ namespace Online::Lobby
             }
             else lastMessage.clear();
 
+            if (current.match && current.match->nativeInput && !current.match->host)
+            {
+                if (incomingMatch != current.match->id)
+                {
+                    StopPublicInputRoom();
+                    JoinPublicInputRoom({ current.match->peerPort, current.match->peerToken }, localName);
+                    incomingMatch = current.match->id;
+                }
+            }
+            else
+            {
+                incomingMatch.clear();
+                if (current.ownRoomId.empty() && (!current.match || !current.match->nativeInput))
+                    StopPublicInputRoom();
+            }
+
             std::lock_guard lock(mutex_);
             current.busy = pending_.has_value();
             state_ = current;
         }
+        StopPublicInputRoom();
     }
 
     Client& GetClient()

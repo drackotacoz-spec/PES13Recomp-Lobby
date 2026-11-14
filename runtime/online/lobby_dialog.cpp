@@ -168,8 +168,13 @@ namespace Online
             if (state.match)
             {
                 Box(dc, Rect(24, 142, 748, 300), kPanel);
-                Label(dc, L"Chat de sala", g_dialog.headingFont, kText, Rect(40, 151, 380, 31));
-                Label(dc, L"F2 \u00b7 Escribir", g_dialog.smallFont, kMuted, Rect(557, 153, 199, 27), DT_RIGHT);
+                Label(dc, L"Chat de sala", g_dialog.headingFont, kText, Rect(40, 151, 180, 31));
+                if (state.match->nativeInput && state.publicInput == Lobby::PublicInput::Connected)
+                    Label(dc, L"Elijan los mismos equipos y asignen los dos mandos.", g_dialog.smallFont, kMuted,
+                        Rect(228, 153, 398, 27));
+                if (state.match->nativeInput && state.publicInput == Lobby::PublicInput::Failed)
+                    Label(dc, L"Sal\u00ed de la sala y volv\u00e9 a intentar.", g_dialog.smallFont, kAmber, Rect(228, 153, 398, 27));
+                Label(dc, L"F2 \u00b7 Escribir", g_dialog.smallFont, kMuted, Rect(634, 153, 122, 27), DT_RIGHT);
                 Box(dc, Rect(40, 190, 716, 151), kField);
                 FocusBorder(dc, Rect(40, 190, 716, 151), g_dialog.chatHistory);
                 Box(dc, Rect(40, 355, 600, 38), kField);
@@ -283,6 +288,8 @@ namespace Online
             enable(Decline, connected && invite);
             enable(Leave, connected && (!state.ownRoomId.empty() || state.match));
             enable(ChatSend, state.match && GetWindowTextLengthW(g_dialog.chatEntry) != 0);
+            enable(Direct, state.publicInput == Lobby::PublicInput::None);
+            enable(NetworkTrial, state.publicInput == Lobby::PublicInput::None);
             SendMessageW(g_dialog.nickname, EM_SETREADONLY, state.connected || state.busy, 0);
         }
 
@@ -327,10 +334,25 @@ namespace Online
                 SendMessageW(history, EM_LINESCROLL, 0, firstLine);
         }
 
+        std::wstring MatchStatus(const Lobby::State& state)
+        {
+            auto status = L"Rival confirmado: " + state.match->peerName + L" \u00b7 ";
+            if (!state.match->nativeInput)
+                return status + L"El partido online sigue en desarrollo.";
+            if (state.publicInput == Lobby::PublicInput::Waiting)
+                return status + L"Esperando la conexi\u00f3n del rival\u2026";
+            if (state.publicInput == Lobby::PublicInput::Connected)
+                return status + L"Conectados. Vuelvan al juego y elijan lado.";
+            if (state.publicInput == Lobby::PublicInput::Failed)
+                return status + (state.publicInputError.empty() ? L"No se pudo conectar el amistoso." : state.publicInputError);
+            return status + L"Conectando el amistoso\u2026";
+        }
+
         void Refresh()
         {
             auto state = Lobby::GetClient().GetState();
-            bool changed = state.connected != g_dialog.state.connected || state.busy != g_dialog.state.busy;
+            bool changed = state.connected != g_dialog.state.connected || state.busy != g_dialog.state.busy ||
+                state.publicInput != g_dialog.state.publicInput;
             const bool paired = state.match.has_value();
             const bool wasPaired = g_dialog.state.match.has_value();
             const bool newRoom = paired != wasPaired || (paired && state.match->id != g_dialog.state.match->id);
@@ -366,12 +388,16 @@ namespace Online
             std::wstring status = g_dialog.validation.empty() ? state.message : g_dialog.validation;
             if (g_dialog.trialUnavailable)
                 status = L"No se pudo iniciar la prueba de amistoso por red.";
+            else if (paired && state.publicInput == Lobby::PublicInput::Failed)
+                status = MatchStatus(state);
             else if (paired && !g_dialog.chatError.empty())
                 status = g_dialog.chatError;
             else if (paired && !state.chatError.empty())
                 status = state.chatError;
             else if (paired)
-                status = L"Rival confirmado: " + state.match->peerName + L" \u00b7 El partido online sigue en desarrollo.";
+                status = MatchStatus(state);
+            else if (status.empty() && !state.ownRoomId.empty())
+                status = L"Sala p\u00fablica abierta. Esperando rival.";
             else if (status.empty())
                 status = state.connected ? L"Eleg\u00ed una sala p\u00fablica o invit\u00e1 a un jugador."
                     : state.busy ? L"Conectando al lobby\u2026" : L"Eleg\u00ed un apodo para conectarte.";

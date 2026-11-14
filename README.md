@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.3.1-netplay-test/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.3.2-public-rooms/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.3.1-netplay-test/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.3.1-netplay-test)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.3.2-public-rooms/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.3.2-public-rooms)
 
 ## Cómo arrancar
 
@@ -11,20 +11,20 @@
 3. **Elegí tu propia ISO de PES 2013 para Xbox 360, edición Europa (Es,Pt)**. Esa edición trae español. La copia probada figura como `PES 2013 - Pro Evolution Soccer (Europe) (Es,Pt).iso`.
 4. **Esperá a que termine** y abrí **`Jugar PES 2013.exe`**. La primera compilación tarda. El asistente genera el ejecutable en tu PC a partir de tu disco.
 
-## Probá un amistoso por red
+## Probá un amistoso desde una sala pública
 
-1. Los dos abran **Jugar PES 2013.exe**. Entren a **Partido → Partido amistoso** y quédense donde se elige lado.
-2. En los dos juegos, apretá **F1 → Probar amistoso por red**. El anfitrión crea la sala y le pasa el código al invitado.
-3. Vuelvan al juego, elijan **Local** y **Visitante** y comprueben que los equipos coincidan. Si el partido se desincroniza, anoten en qué jugada pasó. Los CSV se guardan solos en `registros-red`.
+1. Abrí dos ventanas de **Jugar PES 2013.exe** en la misma PC. En ambas, entrá a **Partido → Partido amistoso** y quedate donde se elige lado.
+2. Apretá **F1** en cada ventana y conectate con apodos distintos. En una elegí **Crear sala pública**. En la otra, elegí la sala de la lista y tocá **Unirme**. PES conecta los mandos automáticamente.
+3. Cuando diga **Conectados**, volvé al juego, asigná **Local** y **Visitante** y verificá que las dos copias muestren los mismos equipos. Si se desincronizan, los CSV se guardan solos en `registros-red`.
 
-La prueba es experimental. Desde casas distintas, el anfitrión tiene que ser alcanzable por **TCP 28513**. El archivo **PRUEBA DE RED.txt** del ZIP explica cómo compartir el código.
+El lobby automático de esta versión funciona en la misma PC. Para probar entre dos PCs, **F1 → Probar amistoso por red** abre el modo experimental por código. El archivo **PRUEBA DE RED.txt** explica cómo probar desde dos casas.
 
 ## Probá el lobby y el chat
 
 > Las salas, las invitaciones y el chat se prueban con dos ventanas en la misma PC. **Conexión directa** sirve para medir el ping. El rollback sigue en desarrollo.
 
 1. Abrí dos ventanas de `Jugar PES 2013.exe`, apretá **F1** en cada una y conectate con apodos distintos. Si ambas usan el mismo apodo guardado, tocá **Desconectarme** en una, cambialo y volvé a conectarte.
-2. En una ventana elegí **Crear sala pública** y en la otra elegí la sala y tocá **Unirme**. Para probar una invitación privada, seleccioná al otro jugador, tocá **Invitar** y aceptá desde la otra ventana.
+2. Para probar una invitación privada de chat, seleccioná al otro jugador, tocá **Invitar** y aceptá desde la otra ventana.
 3. Cuando figure el rival, apretá **F2** para escribir y **Enter** para enviar. Probá `/casi`, `/var` o `/payaso` para tirar un emoji que aparece en las dos ventanas. **Esc** te devuelve al juego.
 
 ## Si te trabás

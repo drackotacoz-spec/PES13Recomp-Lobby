@@ -1,5 +1,7 @@
 #include "room_dialog.h"
 #include "lobby_dialog.h"
+#include "lobby_client.h"
+#include "network_trial.h"
 #include "room.h"
 #include "player_profile.h"
 
@@ -49,6 +51,7 @@ namespace Online
             std::stop_source stop;
             uint64_t revision = 0;
             bool experimental = false;
+            bool publicInput = false;
         };
 
         Session g_session;
@@ -73,6 +76,7 @@ namespace Online
             ++g_session.revision;
             g_session.stop.request_stop();
             g_session.room.reset();
+            g_session.publicInput = false;
             g_session.status = { Phase::Idle, L"Sala cerrada.", {} };
         }
 
@@ -103,36 +107,45 @@ namespace Online
             return true;
         }
 
-        void StartRoom(bool hosting, Destination destination, std::wstring name)
+        struct RoomStart
         {
             uint64_t revision;
             std::stop_token stop;
             bool experimental;
-            {
-                std::lock_guard lock(g_session.mutex);
-                if (g_session.status.phase != Phase::Idle && g_session.status.phase != Phase::Error)
-                    return;
-                revision = ++g_session.revision;
-                g_session.stop = std::stop_source{};
-                stop = g_session.stop.get_token();
-                experimental = g_session.experimental;
-                g_session.status = hosting
-                    ? Status{ Phase::Hosting, L"Creando sala\u2026", {}, true }
-                    : Status{ Phase::Joining, L"Conectando con el anfitri\u00f3n\u2026", {} };
-                g_session.status.localName = name;
-            }
+        };
 
+        std::optional<RoomStart> BeginRoom(bool hosting, bool publicInput, const std::wstring& name)
+        {
+            std::lock_guard lock(g_session.mutex);
+            if (g_session.publicInput || (g_session.status.phase != Phase::Idle && g_session.status.phase != Phase::Error))
+                return std::nullopt;
+            ++g_session.revision;
+            g_session.stop = std::stop_source{};
+            g_session.publicInput = publicInput;
+            if (publicInput) g_session.experimental = true;
+            g_session.status = hosting
+                ? Status{ Phase::Hosting, L"Creando sala\u2026", {}, true }
+                : Status{ Phase::Joining, L"Conectando con el anfitri\u00f3n\u2026", {} };
+            g_session.status.localName = name;
+            return RoomStart{ g_session.revision, g_session.stop.get_token(), g_session.experimental };
+        }
+
+        bool StartRoomWorker(bool hosting, Destination destination, std::wstring name, RoomStart start,
+            std::shared_ptr<Room> listening = {})
+        {
+            const auto [revision, stop, experimental] = start;
             try
             {
-                std::thread([hosting, destination = std::move(destination), name = std::move(name), revision, stop, experimental] {
-                    auto room = std::make_shared<Room>(experimental ? Room::Mode::Input : Room::Mode::Latency);
-                    if (!room->SetLocalName(PlayerNameUtf8(name)))
+                std::thread([hosting, destination = std::move(destination), name = std::move(name),
+                    listening = std::move(listening), revision, stop, experimental] {
+                    auto room = listening ? listening : std::make_shared<Room>(experimental ? Room::Mode::Input : Room::Mode::Latency);
+                    if (!listening && !room->SetLocalName(PlayerNameUtf8(name)))
                     {
                         Update(revision, { Phase::Error, L"El apodo no es v\u00e1lido.", {} });
                         return;
                     }
                     std::wstring code;
-                    if (hosting)
+                    if (hosting && !listening)
                     {
                         if (!room->Host(destination.address, experimental ? kExperimentalMatchPort : destination.port))
                         {
@@ -146,7 +159,7 @@ namespace Online
                     }
 
                     const bool connected = hosting
-                        ? room->WaitForPeer(stop)
+                        ? room->WaitForPeer(stop, !listening)
                         : room->Join(destination.address, destination.port, destination.token, stop);
                     if (!connected)
                     {
@@ -173,11 +186,19 @@ namespace Online
                     if (!stop.stop_requested())
                         ReportRoomFailure(room, {});
                 }).detach();
+                return true;
             }
             catch (const std::system_error&)
             {
                 Update(revision, { Phase::Error, L"No se pudo iniciar la conexi\u00f3n.", {} });
+                return false;
             }
+        }
+
+        void StartRoom(bool hosting, Destination destination, std::wstring name)
+        {
+            if (const auto start = BeginRoom(hosting, false, name))
+                StartRoomWorker(hosting, std::move(destination), std::move(name), *start);
         }
 
         constexpr int kCreate = 100;
@@ -796,6 +817,13 @@ namespace Online
 
     void ToggleRoomDialog(HWND gameWindow, bool experimental)
     {
+        std::wstring publicError;
+        if (PublicInputStatus(publicError) != Lobby::PublicInput::None)
+        {
+            MessageBoxW(gameWindow, L"Sal\u00ed de la sala p\u00fablica antes de abrir una conexi\u00f3n por c\u00f3digo.",
+                L"PES 2013", MB_OK | MB_ICONINFORMATION);
+            return;
+        }
         if (!g_dialog.window && !CreateDialogWindow(gameWindow))
             return;
 
@@ -871,6 +899,83 @@ namespace Online
     {
         std::lock_guard lock(g_session.mutex);
         return g_session.experimental && g_session.status.phase == Phase::Connected ? g_session.room : nullptr;
+    }
+
+    std::optional<PublicEndpoint> OpenPublicInputRoom(std::wstring name, std::wstring& error)
+    {
+        const auto start = BeginRoom(true, true, name);
+        if (!start)
+        {
+            error = L"Sal\u00ed de la sala o conexi\u00f3n actual antes de crear otra.";
+            return std::nullopt;
+        }
+        if (!PrepareNetworkTrial())
+        {
+            error = L"No se pudo crear la carpeta de registros de la prueba.";
+            StopPublicInputRoom();
+            return std::nullopt;
+        }
+        const auto room = std::make_shared<Room>(Room::Mode::Input);
+        if (!room->SetLocalName(PlayerNameUtf8(name)) || !room->Host("127.0.0.1", 0))
+        {
+            error = L"No se pudo abrir la conexi\u00f3n para la sala p\u00fablica.";
+            StopPublicInputRoom();
+            return std::nullopt;
+        }
+        PublicEndpoint endpoint{ room->Port(), room->Token() };
+        if (!StartRoomWorker(true, {}, std::move(name), *start, room))
+        {
+            error = L"No se pudo iniciar la conexi\u00f3n.";
+            StopPublicInputRoom();
+            return std::nullopt;
+        }
+        return endpoint;
+    }
+
+    void JoinPublicInputRoom(PublicEndpoint endpoint, std::wstring name)
+    {
+        const auto start = BeginRoom(false, true, name);
+        if (!start) return;
+        if (!PrepareNetworkTrial())
+        {
+            Update(start->revision, { Phase::Error, L"No se pudo crear la carpeta de registros de la prueba.", {} });
+            return;
+        }
+        StartRoomWorker(false, { "127.0.0.1", endpoint.port, std::move(endpoint.token) }, std::move(name), *start);
+    }
+
+    void StopPublicInputRoom()
+    {
+        std::lock_guard lock(g_session.mutex);
+        if (!g_session.publicInput) return;
+        ++g_session.revision;
+        g_session.stop.request_stop();
+        g_session.room.reset();
+        g_session.publicInput = false;
+        g_session.experimental = false;
+        g_session.status = {};
+    }
+
+    bool ManualRoomActive()
+    {
+        std::lock_guard lock(g_session.mutex);
+        return !g_session.publicInput && InRoom(g_session.status.phase);
+    }
+
+    Lobby::PublicInput PublicInputStatus(std::wstring& error)
+    {
+        std::lock_guard lock(g_session.mutex);
+        if (!g_session.publicInput) return Lobby::PublicInput::None;
+        switch (g_session.status.phase)
+        {
+        case Phase::Hosting: return Lobby::PublicInput::Waiting;
+        case Phase::Joining: return Lobby::PublicInput::Connecting;
+        case Phase::Connected: return Lobby::PublicInput::Connected;
+        case Phase::Error:
+            error = g_session.status.message;
+            return Lobby::PublicInput::Failed;
+        default: return Lobby::PublicInput::None;
+        }
     }
 
     std::wstring RoomPlayerName(bool local)

@@ -308,7 +308,7 @@ namespace Online
         return true;
     }
 
-    bool Room::WaitForPeer(std::stop_token stop)
+    bool Room::WaitForPeer(std::stop_token stop, bool expireInvitation)
     {
         error_.clear();
         if (!Hosting())
@@ -324,7 +324,7 @@ namespace Online
             return false;
         }
 
-        const auto deadline = Clock::now() + kInviteTimeout;
+        const auto deadline = expireInvitation ? Clock::now() + kInviteTimeout : Clock::time_point::max();
         for (;;)
         {
             const Wait result = Ready(listener_, false, deadline, stop);

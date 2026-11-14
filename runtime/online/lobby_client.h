@@ -12,10 +12,20 @@
 namespace Online::Lobby
 {
     enum class Action { Connect, Refresh, OpenRoom, JoinRoom, Invite, Accept, Decline, Leave, Disconnect, Chat };
+    enum class PublicInput { None, Waiting, Connecting, Connected, Failed };
     struct Player { std::string id; std::wstring name; std::string status; };
     struct PublicRoom { std::string id; std::wstring hostName; };
     struct Invitation { std::string id; std::wstring fromName; };
-    struct Match { std::wstring peerName; std::string kind; std::string id; };
+    struct Match
+    {
+        std::wstring peerName;
+        std::string kind;
+        std::string id;
+        bool nativeInput = false;
+        bool host = false;
+        uint16_t peerPort = 0;
+        std::string peerToken;
+    };
     struct Message
     {
         uint64_t id;
@@ -37,6 +47,8 @@ namespace Online::Lobby
         std::string ownRoomId;
         std::wstring message;
         std::wstring chatError;
+        PublicInput publicInput = PublicInput::None;
+        std::wstring publicInputError;
     };
 
     class Client
