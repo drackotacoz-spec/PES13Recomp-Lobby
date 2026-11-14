@@ -25,6 +25,7 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('#include "call_counter.h"')
 [void]$sb.AppendLine('#ifdef _WIN32')
 [void]$sb.AppendLine('#include <online/guest_nickname.h>')
+[void]$sb.AppendLine('#include <online/match_probe.h>')
 [void]$sb.AppendLine('#endif')
 [void]$sb.AppendLine('')
 [void]$sb.AppendLine('const uint32_t g_callCounterAddresses[] = {')
@@ -34,15 +35,21 @@ foreach ($f in $funcs) { [void]$sb.AppendLine(('    0x{0:X8},' -f $f)) }
 [void]$sb.AppendLine(('std::atomic<uint32_t> g_callCounters[{0}];' -f $funcs.Count))
 [void]$sb.AppendLine('')
 $i = 0
+$matchProbes = @('sub_82883C50', 'sub_8286B718', 'sub_8286C030', 'sub_8286C188')
 foreach ($f in $funcs) {
     $n = 'sub_{0:X8}' -f $f
+    $traceMatch = $n -in $matchProbes
     if ($n -eq 'sub_824476B8') {
         [void]$sb.AppendLine('#ifdef _WIN32')
         [void]$sb.AppendLine(('PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); Online::SetGuestText(ctx, base); }}' -f $n, $i))
         [void]$sb.AppendLine('#else')
+    } elseif ($traceMatch) {
+        [void]$sb.AppendLine('#ifdef _WIN32')
+        [void]$sb.AppendLine(('extern "C" PPC_FUNC(__imp__{0}); PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); Online::TraceMatchCall(0x{2:X8}, __imp__{0}, ctx, base); }}' -f $n, $i, $f))
+        [void]$sb.AppendLine('#else')
     }
     [void]$sb.AppendLine(('extern "C" PPC_FUNC(__imp__{0}); PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); __imp__{0}(ctx, base); }}' -f $n, $i))
-    if ($n -eq 'sub_824476B8') { [void]$sb.AppendLine('#endif') }
+    if ($n -eq 'sub_824476B8' -or $traceMatch) { [void]$sb.AppendLine('#endif') }
     $i++
 }
 New-Item -ItemType Directory -Force "$root\runtime\debug" | Out-Null

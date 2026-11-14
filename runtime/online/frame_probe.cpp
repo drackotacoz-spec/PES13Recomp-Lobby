@@ -5,6 +5,7 @@
 
 #include <guest_memory.h>
 #include <ppc_recomp_shared.h>
+#include <gpu/gpu.h>
 
 #include <array>
 #include <cstdio>
@@ -79,7 +80,7 @@ namespace Online
             const char* path = std::getenv("PES_FRAME_TRACE");
             FILE* file = path && *path ? std::fopen(path, "w") : nullptr;
             if (file)
-                std::fputs("guest_frame_field_before,guest_frame_field_after,sequence,exchanged,home_buttons,away_buttons,match_start,match_remaining,game_random\n", file);
+                std::fputs("guest_frame_field_before,guest_frame_field_after,sequence,exchanged,home_buttons,away_buttons,match_start,match_remaining,game_random,gpu_frame\n", file);
             return file;
         }();
         const uint32_t before = trace ? GuestFrameCount() : 0;
@@ -93,10 +94,11 @@ namespace Online
         g_frame.active = false;
         if (trace)
         {
-            std::fprintf(trace, "%u,%u,%u,%u,%04x,%04x,%u,%u,%u\n",
+            std::fprintf(trace, "%u,%u,%u,%u,%04x,%04x,%u,%u,%u,%llu\n",
                 before, GuestFrameCount(), g_frame.sequence, unsigned(exchanged),
                 unsigned(g_frame.pads[0].buttons), unsigned(g_frame.pads[1].buttons),
-                Memory::Load32(kMatchTicksAtStart), Memory::Load32(kMatchTicksRemaining), unsigned(Memory::Load8(kGameRandom)));
+                Memory::Load32(kMatchTicksAtStart), Memory::Load32(kMatchTicksRemaining), unsigned(Memory::Load8(kGameRandom)),
+                static_cast<unsigned long long>(Gpu::FrameCount()));
             std::fflush(trace);
         }
     }

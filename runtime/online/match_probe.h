@@ -4,5 +4,5 @@
 
 namespace Online
 {
-    PPCFunc* MatchProbeHook(uint32_t guestAddress, PPCFunc* original);
+    void TraceMatchCall(uint32_t guestAddress, PPCFunc* original, PPCContext& ctx, uint8_t* base);
 }

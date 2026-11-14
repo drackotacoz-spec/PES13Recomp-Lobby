@@ -4,6 +4,8 @@
 #include <guest_memory.h>
 #include <kernel/thread.h>
 
+#include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
@@ -14,6 +16,8 @@ namespace
     // elapsed-time getter sub_82881770 reads the two clock values below.
     constexpr uint32_t kManagerPointer = 0x8350AED0;
     constexpr uint32_t kGameStepCounter = 0x836F6504;
+    // sub_8286C030 skips the player and ball updates when this flag is clear.
+    constexpr uint32_t kGameplayStepEnabled = 0x836F6539;
     constexpr uint32_t kClockRemaining = 0x836F6F74;
     constexpr uint32_t kClockStart = 0x836F6F7C;
     constexpr uint32_t kGameRandom = 0x8350886E;
@@ -27,6 +31,18 @@ namespace
         uint32_t start;
         unsigned random;
         unsigned period;
+        unsigned gameplay;
+
+        uint64_t Fingerprint() const
+        {
+            // Manager pointers, guest thread IDs and rendered frame numbers can differ between processes.
+            const std::array<uint32_t, 6> words{step, remaining, start, random, period, gameplay};
+            uint64_t hash = 14695981039346656037ull;
+            for (const auto word : words)
+                for (unsigned shift = 0; shift < 32; shift += 8)
+                    hash = (hash ^ ((word >> shift) & 0xff)) * 1099511628211ull;
+            return hash;
+        }
     };
 
     MatchData SampleMatch()
@@ -38,6 +54,7 @@ namespace
             Memory::Load32(kClockStart),
             Memory::Load8(kGameRandom),
             Memory::Load8(kPeriod),
+            Memory::Load8(kGameplayStepEnabled),
         };
     }
 
@@ -54,71 +71,48 @@ namespace
                 return nullptr;
             }
             std::fputs("callback,guest_thread,caller,gpu_frame,manager_before,step_before,clock_before,period_start_before,rng_before,period_before,"
-                       "manager_after,step_after,clock_after,period_start_after,rng_after,period_after,result\n", file);
+                       "manager_after,step_after,clock_after,period_start_after,rng_after,period_after,result,"
+                       "call,parent_call,gameplay_before,gameplay_after,fingerprint_before,fingerprint_after\n", file);
             std::fflush(file);
             return file;
         }();
         return trace;
     }
 
-    struct Callback
-    {
-        uint32_t address;
-        PPCFunc* original = nullptr;
-    };
-
-    Callback g_matchInit{0x82883C50};
-    Callback g_matchUpdate{0x8286B718};
-    Callback g_gameStep{0x8286C030};
-    Callback g_gameStepTail{0x8286C188};
-
-    void TraceCallback(const Callback& callback, PPCContext& ctx, uint8_t* base)
-    {
-        const auto caller = uint32_t(ctx.lr);
-        const auto* thread = Kernel::CurrentGuestThread();
-        const auto gpuFrame = static_cast<unsigned long long>(Gpu::FrameCount());
-        const MatchData before = SampleMatch();
-        callback.original(ctx, base);
-        const MatchData after = SampleMatch();
-        FILE* trace = MatchTrace();
-        std::fprintf(trace, "%08x,%u,%08x,%llu,%08x,%u,%u,%u,%u,%u,%08x,%u,%u,%u,%u,%u,%08x\n",
-            callback.address, thread ? thread->threadId : 0, caller, gpuFrame,
-            before.manager, before.step, before.remaining, before.start, before.random, before.period,
-            after.manager, after.step, after.remaining, after.start, after.random, after.period, ctx.r3.u32);
-        std::fflush(trace);
-    }
-
-    void ProbeInit(PPCContext& ctx, uint8_t* base) { TraceCallback(g_matchInit, ctx, base); }
-    void ProbeUpdate(PPCContext& ctx, uint8_t* base) { TraceCallback(g_matchUpdate, ctx, base); }
-    void ProbeStep(PPCContext& ctx, uint8_t* base) { TraceCallback(g_gameStep, ctx, base); }
-    void ProbeTail(PPCContext& ctx, uint8_t* base) { TraceCallback(g_gameStepTail, ctx, base); }
+    std::atomic<uint64_t> g_nextCall{1};
+    thread_local uint64_t g_activeCall = 0;
 }
 
 namespace Online
 {
-    PPCFunc* MatchProbeHook(uint32_t guestAddress, PPCFunc* original)
+    void TraceMatchCall(uint32_t guestAddress, PPCFunc* original, PPCContext& ctx, uint8_t* base)
     {
-        if (!MatchTrace()) return original;
-        if (guestAddress == g_matchInit.address)
+        FILE* trace = MatchTrace();
+        if (!trace)
         {
-            g_matchInit.original = original;
-            return ProbeInit;
+            original(ctx, base);
+            return;
         }
-        if (guestAddress == g_matchUpdate.address)
-        {
-            g_matchUpdate.original = original;
-            return ProbeUpdate;
-        }
-        if (guestAddress == g_gameStep.address)
-        {
-            g_gameStep.original = original;
-            return ProbeStep;
-        }
-        if (guestAddress == g_gameStepTail.address)
-        {
-            g_gameStepTail.original = original;
-            return ProbeTail;
-        }
-        return original;
+
+        const uint64_t call = g_nextCall.fetch_add(1, std::memory_order_relaxed);
+        const uint64_t parent = g_activeCall;
+        g_activeCall = call;
+        const auto caller = uint32_t(ctx.lr);
+        const auto* thread = Kernel::CurrentGuestThread();
+        const auto threadId = thread ? thread->threadId : 0;
+        const auto gpuFrame = static_cast<unsigned long long>(Gpu::FrameCount());
+        const MatchData before = SampleMatch();
+        original(ctx, base);
+        const MatchData after = SampleMatch();
+        g_activeCall = parent;
+        std::fprintf(trace, "%08x,%u,%08x,%llu,%08x,%u,%u,%u,%u,%u,%08x,%u,%u,%u,%u,%u,%08x,"
+            "%llu,%llu,%u,%u,%016llx,%016llx\n",
+            guestAddress, threadId, caller, gpuFrame,
+            before.manager, before.step, before.remaining, before.start, before.random, before.period,
+            after.manager, after.step, after.remaining, after.start, after.random, after.period, ctx.r3.u32,
+            static_cast<unsigned long long>(call), static_cast<unsigned long long>(parent),
+            before.gameplay, after.gameplay, static_cast<unsigned long long>(before.Fingerprint()),
+            static_cast<unsigned long long>(after.Fingerprint()));
+        std::fflush(trace);
     }
 }

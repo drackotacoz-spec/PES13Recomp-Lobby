@@ -20,6 +20,14 @@ namespace Online
 {
     namespace
     {
+        constexpr uint16_t kExperimentalMatchPort = 28513;
+
+        bool ExperimentalSync()
+        {
+            static const bool enabled = std::getenv("PES_EXPERIMENTAL_SYNC") != nullptr;
+            return enabled;
+        }
+
         enum class Phase { Idle, Hosting, Joining, Connected, Error };
 
         struct Status
@@ -114,7 +122,7 @@ namespace Online
             try
             {
                 std::thread([hosting, destination = std::move(destination), name = std::move(name), revision, stop] {
-                    const bool experimental = std::getenv("PES_EXPERIMENTAL_SYNC") != nullptr;
+                    const bool experimental = ExperimentalSync();
                     auto room = std::make_shared<Room>(experimental ? Room::Mode::Input : Room::Mode::Latency);
                     if (!room->SetLocalName(PlayerNameUtf8(name)))
                     {
@@ -124,7 +132,7 @@ namespace Online
                     std::wstring code;
                     if (hosting)
                     {
-                        if (!room->Host(destination.address, destination.port))
+                        if (!room->Host(destination.address, experimental ? kExperimentalMatchPort : destination.port))
                         {
                             Update(revision, { Phase::Error, Wide(room->Error()), {} });
                             return;
@@ -145,7 +153,9 @@ namespace Online
                     }
 
                     Status joined{ Phase::Connected,
-                        L"Conexi\u00f3n de prueba establecida. El partido online sigue en desarrollo.", code, hosting };
+                        experimental ? L"Conectados. Vuelvan al juego y sigan desde la previa."
+                                     : L"Conexi\u00f3n de prueba establecida. El partido online sigue en desarrollo.",
+                        code, hosting };
                     joined.localName = name;
                     joined.remoteName = PlayerNameFromUtf8(room->PeerName());
                     Update(revision, std::move(joined), room);
@@ -290,6 +300,7 @@ namespace Online
 
         void DrawPanel(HDC dc)
         {
+            const bool experimental = ExperimentalSync();
             Fill(dc, Bounds(0, 0, kWidth, kHeight), kBackground);
             Box(dc, 0, 0, kWidth, 150, RGB(15, 15, 18));
             // OpenSmash's angular red and white cuts, kept clear of the controls.
@@ -299,11 +310,14 @@ namespace Online
             Slash(dc, 662, 1, 18, 149, kText);
             Fill(dc, Bounds(0, 0, kWidth, 3), kRed);
             Label(dc, L"PES 2013  /  ONLINE", g_dialog.smallFont, kRed, Bounds(28, 17, 262, 25));
-            Label(dc, L"SALA PRIVADA", g_dialog.titleFont, kText, Bounds(26, 43, 492, 63));
+            Label(dc, experimental ? L"PRUEBA DE AMISTOSO" : L"SALA PRIVADA",
+                g_dialog.titleFont, kText, Bounds(26, 43, 492, 63));
             const bool connected = g_dialog.phase == Phase::Connected;
             const bool room = InRoom(g_dialog.phase);
-            Label(dc, connected ? L"Conexi\u00f3n directa entre jugadores" : L"Cre\u00e1 una sala o ingres\u00e1 un c\u00f3digo de invitaci\u00f3n.",
-                g_dialog.bodyFont, kMuted, Bounds(28, 109, 504, 22));
+            const wchar_t* subtitle = experimental
+                ? L"En los dos juegos, lleguen a la previa con los mismos equipos."
+                : connected ? L"Conexi\u00f3n directa entre jugadores" : L"Cre\u00e1 una sala o ingres\u00e1 un c\u00f3digo de invitaci\u00f3n.";
+            Label(dc, subtitle, g_dialog.bodyFont, experimental ? kAmber : kMuted, Bounds(28, 109, 504, 22));
 
             if (!room)
             {
@@ -331,13 +345,23 @@ namespace Online
                         g_dialog.sectionFont, kText, Bounds(45, 320, 405, 34));
                 }
 
-                Box(dc, 540, 296, 162, 75, kField);
-                Label(dc, L"PING", g_dialog.smallFont, kMuted, Bounds(552, 305, 103, 18));
-                for (int i = 0; i < 4; ++i)
+                if (experimental)
                 {
-                    const int height = 9 + i * 5;
-                    Fill(dc, Bounds(652 + i * 9, 349 - height, 5, height),
-                        i < g_dialog.signalBars ? g_dialog.signalColor : kLine);
+                    if (g_dialog.host)
+                        Label(dc, L"Por Internet, us\u00e1 la IPv4 p\u00fablica en el c\u00f3digo. Conserv\u00e1 el puerto y la clave.",
+                            g_dialog.bodyFont, kMuted, Bounds(44, 391, 656, 24));
+                    Label(dc, L"Prueba de mandos \u00b7 Sin medici\u00f3n de ping", g_dialog.smallFont, kMuted, Bounds(44, 421, 656, 22));
+                }
+                else
+                {
+                    Box(dc, 540, 296, 162, 75, kField);
+                    Label(dc, L"PING", g_dialog.smallFont, kMuted, Bounds(552, 305, 103, 18));
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        const int height = 9 + i * 5;
+                        Fill(dc, Bounds(652 + i * 9, 349 - height, 5, height),
+                            i < g_dialog.signalBars ? g_dialog.signalColor : kLine);
+                    }
                 }
             }
 
@@ -434,7 +458,8 @@ namespace Online
             };
             updateText(g_dialog.status, state.message.empty() ? L"Sin conexi\u00f3n" : state.message);
             updateText(g_dialog.shareCode, state.code);
-            updateText(g_dialog.ping, state.phase == Phase::Connected && !state.ping ? L"Midiendo\u2026" : ping);
+            if (!ExperimentalSync())
+                updateText(g_dialog.ping, state.phase == Phase::Connected && !state.ping ? L"Midiendo\u2026" : ping);
             updateText(g_dialog.localNameLabel, state.localName.empty() ? L"Vos" : state.localName);
             updateText(g_dialog.remoteNameLabel, state.phase != Phase::Connected ? L"Esperando al rival" :
                 state.remoteName.empty() ? L"Rival" : state.remoteName);
@@ -446,7 +471,7 @@ namespace Online
                 ShowWindow(g_dialog.joinCode, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.shareCode, active && state.host ? SW_SHOW : SW_HIDE);
                 ShowWindow(g_dialog.copy, active && state.host ? SW_SHOW : SW_HIDE);
-                ShowWindow(g_dialog.ping, active ? SW_SHOW : SW_HIDE);
+                ShowWindow(g_dialog.ping, active && !ExperimentalSync() ? SW_SHOW : SW_HIDE);
                 ShowWindow(g_dialog.stop, active ? SW_SHOW : SW_HIDE);
                 ShowWindow(g_dialog.playerName, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.saveName, active ? SW_HIDE : SW_SHOW);
@@ -682,7 +707,8 @@ namespace Online
                 int(monitor.rcWork.left), int(monitor.rcWork.right - w));
             const int y = std::clamp(int(area.top + (area.bottom - area.top - h) / 2),
                 int(monitor.rcWork.top), int(monitor.rcWork.bottom - h));
-            HWND window = CreateWindowExW(exStyle, className, L"PES 2013 \u00b7 Sala privada", style,
+            const auto title = ExperimentalSync() ? L"PES 2013 \u00b7 Prueba de amistoso" : L"PES 2013 \u00b7 Sala privada";
+            HWND window = CreateWindowExW(exStyle, className, title, style,
                 x, y, w, h, owner, nullptr, instance, nullptr);
             if (!window)
                 return nullptr;
@@ -692,7 +718,7 @@ namespace Online
                 return CreateFontW(-Px(height), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                     OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
             };
-            g_dialog.titleFont = font(L"Bahnschrift Condensed", 57, FW_BOLD);
+            g_dialog.titleFont = font(L"Bahnschrift Condensed", ExperimentalSync() ? 49 : 57, FW_BOLD);
             g_dialog.sectionFont = font(L"Segoe UI", 23, FW_SEMIBOLD);
             g_dialog.bodyFont = font(L"Segoe UI", 15, FW_SEMIBOLD);
             g_dialog.smallFont = font(L"Segoe UI", 13, FW_SEMIBOLD);

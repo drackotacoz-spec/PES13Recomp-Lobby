@@ -32,7 +32,6 @@
 
 #ifdef _WIN32
 #   include "online/frame_probe.h"
-#   include "online/match_probe.h"
 #   ifndef WIN32_LEAN_AND_MEAN
 #       define WIN32_LEAN_AND_MEAN
 #   endif
@@ -118,19 +117,9 @@ namespace
         for (size_t i = 0; i < PPC_CODE_SIZE / 4; ++i)
             table[i] = UnresolvedIndirectCall;
 
-#ifdef _WIN32
-        const bool traceMatch = std::getenv("PES_MATCH_TRACE") != nullptr;
-#endif
         size_t count = 0;
         for (const PPCFuncMapping* m = PPCFuncMappings; m->guest != 0; ++m, ++count)
-        {
-            PPCFunc* host = m->host;
-#ifdef _WIN32
-            if (traceMatch)
-                host = Online::MatchProbeHook(uint32_t(m->guest), host);
-#endif
-            PPC_LOOKUP_FUNC(base, m->guest) = host;
-        }
+            PPC_LOOKUP_FUNC(base, m->guest) = m->host;
 #ifdef _WIN32
         if (std::getenv("PES_FRAME_TRACE") || std::getenv("PES_EXPERIMENTAL_SYNC"))
             PPC_LOOKUP_FUNC(base, 0x821B0EA8) = Online::RunGuestFrame;

@@ -3,6 +3,7 @@
 #include "call_counter.h"
 #ifdef _WIN32
 #include <online/guest_nickname.h>
+#include <online/match_probe.h>
 #endif
 
 const uint32_t g_callCounterAddresses[] = {
@@ -83485,14 +83486,26 @@ extern "C" PPC_FUNC(__imp__sub_8286AD40); PPC_FUNC(sub_8286AD40) { g_callCounter
 extern "C" PPC_FUNC(__imp__sub_8286B0B8); PPC_FUNC(sub_8286B0B8) { g_callCounters[16316].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286B0B8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286B650); PPC_FUNC(sub_8286B650) { g_callCounters[16317].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286B650(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286B710); PPC_FUNC(sub_8286B710) { g_callCounters[16318].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286B710(ctx, base); }
+#ifdef _WIN32
+extern "C" PPC_FUNC(__imp__sub_8286B718); PPC_FUNC(sub_8286B718) { g_callCounters[16319].fetch_add(1, std::memory_order_relaxed); Online::TraceMatchCall(0x8286B718, __imp__sub_8286B718, ctx, base); }
+#else
 extern "C" PPC_FUNC(__imp__sub_8286B718); PPC_FUNC(sub_8286B718) { g_callCounters[16319].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286B718(ctx, base); }
+#endif
 extern "C" PPC_FUNC(__imp__sub_8286B9C8); PPC_FUNC(sub_8286B9C8) { g_callCounters[16320].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286B9C8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286BAC8); PPC_FUNC(sub_8286BAC8) { g_callCounters[16321].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286BAC8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286BB28); PPC_FUNC(sub_8286BB28) { g_callCounters[16322].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286BB28(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286BC70); PPC_FUNC(sub_8286BC70) { g_callCounters[16323].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286BC70(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286BCF0); PPC_FUNC(sub_8286BCF0) { g_callCounters[16324].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286BCF0(ctx, base); }
+#ifdef _WIN32
+extern "C" PPC_FUNC(__imp__sub_8286C030); PPC_FUNC(sub_8286C030) { g_callCounters[16325].fetch_add(1, std::memory_order_relaxed); Online::TraceMatchCall(0x8286C030, __imp__sub_8286C030, ctx, base); }
+#else
 extern "C" PPC_FUNC(__imp__sub_8286C030); PPC_FUNC(sub_8286C030) { g_callCounters[16325].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286C030(ctx, base); }
+#endif
+#ifdef _WIN32
+extern "C" PPC_FUNC(__imp__sub_8286C188); PPC_FUNC(sub_8286C188) { g_callCounters[16326].fetch_add(1, std::memory_order_relaxed); Online::TraceMatchCall(0x8286C188, __imp__sub_8286C188, ctx, base); }
+#else
 extern "C" PPC_FUNC(__imp__sub_8286C188); PPC_FUNC(sub_8286C188) { g_callCounters[16326].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286C188(ctx, base); }
+#endif
 extern "C" PPC_FUNC(__imp__sub_8286C498); PPC_FUNC(sub_8286C498) { g_callCounters[16327].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286C498(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286CB70); PPC_FUNC(sub_8286CB70) { g_callCounters[16328].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286CB70(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_8286CC18); PPC_FUNC(sub_8286CC18) { g_callCounters[16329].fetch_add(1, std::memory_order_relaxed); __imp__sub_8286CC18(ctx, base); }
@@ -83799,7 +83812,11 @@ extern "C" PPC_FUNC(__imp__sub_82883A88); PPC_FUNC(sub_82883A88) { g_callCounter
 extern "C" PPC_FUNC(__imp__sub_82883B08); PPC_FUNC(sub_82883B08) { g_callCounters[16630].fetch_add(1, std::memory_order_relaxed); __imp__sub_82883B08(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82883B78); PPC_FUNC(sub_82883B78) { g_callCounters[16631].fetch_add(1, std::memory_order_relaxed); __imp__sub_82883B78(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82883BF8); PPC_FUNC(sub_82883BF8) { g_callCounters[16632].fetch_add(1, std::memory_order_relaxed); __imp__sub_82883BF8(ctx, base); }
+#ifdef _WIN32
+extern "C" PPC_FUNC(__imp__sub_82883C50); PPC_FUNC(sub_82883C50) { g_callCounters[16633].fetch_add(1, std::memory_order_relaxed); Online::TraceMatchCall(0x82883C50, __imp__sub_82883C50, ctx, base); }
+#else
 extern "C" PPC_FUNC(__imp__sub_82883C50); PPC_FUNC(sub_82883C50) { g_callCounters[16633].fetch_add(1, std::memory_order_relaxed); __imp__sub_82883C50(ctx, base); }
+#endif
 extern "C" PPC_FUNC(__imp__sub_828849B8); PPC_FUNC(sub_828849B8) { g_callCounters[16634].fetch_add(1, std::memory_order_relaxed); __imp__sub_828849B8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_828849C8); PPC_FUNC(sub_828849C8) { g_callCounters[16635].fetch_add(1, std::memory_order_relaxed); __imp__sub_828849C8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_828849D0); PPC_FUNC(sub_828849D0) { g_callCounters[16636].fetch_add(1, std::memory_order_relaxed); __imp__sub_828849D0(ctx, base); }

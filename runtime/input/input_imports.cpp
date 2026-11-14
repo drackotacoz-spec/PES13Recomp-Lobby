@@ -197,7 +197,7 @@ namespace
         return true;
     }
 
-    void TracePad(const PPCContext& ctx, uint32_t user, bool connected, const PadState& pad, uint32_t packet)
+    void TracePad(const PPCContext& ctx, uint32_t user, bool connected, const PadState& pad, uint32_t packet, bool synced)
     {
         static const char* path = std::getenv("PES_PAD_TRACE");
         if (!path || !*path) return;
@@ -225,7 +225,7 @@ namespace
         {
             std::fputc(',', trace);
         }
-        std::fputc('\n', trace);
+        std::fprintf(trace, ",%s\n", synced ? "netplay" : "local");
         std::fflush(trace);
     }
 
@@ -300,11 +300,12 @@ GUEST_IMPORT(XamInputGetState)
     PadState p;
     uint32_t packet = 0;
 #ifdef _WIN32
-    const bool connected = Online::ReadFramePad(user, p, packet) || GetPad(user, p, packet);
+    const bool synced = Online::ReadFramePad(user, p, packet);
 #else
-    const bool connected = GetPad(user, p, packet);
+    const bool synced = false;
 #endif
-    TracePad(ctx, user, connected, p, packet);
+    const bool connected = synced || GetPad(user, p, packet);
+    TracePad(ctx, user, connected, p, packet, synced);
     if (connected)
     {
         if (state)

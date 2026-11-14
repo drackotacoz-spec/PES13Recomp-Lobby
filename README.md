@@ -4,6 +4,8 @@
 
 [Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.2.1-lobby/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.2.1-lobby)
 
+[**Prueba experimental de amistoso por red**](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.3.0-netplay-test) · Usá este ZIP en las dos PCs para probar los mandos y registrar las desincronizaciones.
+
 ## Cómo arrancar
 
 1. **Descargá el ZIP de arriba y extraelo** en una carpeta corta, como `C:\PES13`. Dejá unos **10 GB libres** para preparar el juego. Usá Windows de 64 bits y una placa de video con soporte para Vulkan. Para compilar, se recomiendan 16 GB de RAM.
@@ -13,7 +15,7 @@
 
 ## Probá el lobby y el chat
 
-> Las salas, las invitaciones y el chat se prueban con dos ventanas en la misma PC. **Conexión directa** permite probar el enlace entre dos equipos y ver el ping. El amistoso por Internet y el rollback siguen en desarrollo.
+> Las salas, las invitaciones y el chat se prueban con dos ventanas en la misma PC. **Conexión directa** mide el ping en la versión común. La prueba de amistoso usa el mismo panel con un modo experimental y guarda registros. El rollback sigue en desarrollo.
 
 1. Abrí dos ventanas de `Jugar PES 2013.exe`, apretá **F1** en cada una y conectate con apodos distintos. Si ambas usan el mismo apodo guardado, tocá **Desconectarme** en una, cambialo y volvé a conectarte.
 2. En una ventana elegí **Crear sala pública** y en la otra elegí la sala y tocá **Unirme**. Para probar una invitación privada, seleccioná al otro jugador, tocá **Invitar** y aceptá desde la otra ventana.
