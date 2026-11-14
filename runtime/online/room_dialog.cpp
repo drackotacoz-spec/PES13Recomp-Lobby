@@ -22,7 +22,7 @@ namespace Online
     {
         constexpr uint16_t kExperimentalMatchPort = 28513;
 
-        bool ExperimentalSync()
+        bool ExperimentalSyncFromEnvironment()
         {
             static const bool enabled = std::getenv("PES_EXPERIMENTAL_SYNC") != nullptr;
             return enabled;
@@ -48,6 +48,7 @@ namespace Online
             std::shared_ptr<Room> room;
             std::stop_source stop;
             uint64_t revision = 0;
+            bool experimental = false;
         };
 
         Session g_session;
@@ -106,6 +107,7 @@ namespace Online
         {
             uint64_t revision;
             std::stop_token stop;
+            bool experimental;
             {
                 std::lock_guard lock(g_session.mutex);
                 if (g_session.status.phase != Phase::Idle && g_session.status.phase != Phase::Error)
@@ -113,6 +115,7 @@ namespace Online
                 revision = ++g_session.revision;
                 g_session.stop = std::stop_source{};
                 stop = g_session.stop.get_token();
+                experimental = g_session.experimental;
                 g_session.status = hosting
                     ? Status{ Phase::Hosting, L"Creando sala\u2026", {}, true }
                     : Status{ Phase::Joining, L"Conectando con el anfitri\u00f3n\u2026", {} };
@@ -121,8 +124,7 @@ namespace Online
 
             try
             {
-                std::thread([hosting, destination = std::move(destination), name = std::move(name), revision, stop] {
-                    const bool experimental = ExperimentalSync();
+                std::thread([hosting, destination = std::move(destination), name = std::move(name), revision, stop, experimental] {
                     auto room = std::make_shared<Room>(experimental ? Room::Mode::Input : Room::Mode::Latency);
                     if (!room->SetLocalName(PlayerNameUtf8(name)))
                     {
@@ -222,6 +224,7 @@ namespace Online
             HWND remoteNameLabel = nullptr;
             float scale = 1.0f;
             HFONT titleFont = nullptr;
+            HFONT experimentalTitleFont = nullptr;
             HFONT sectionFont = nullptr;
             HFONT bodyFont = nullptr;
             HFONT smallFont = nullptr;
@@ -230,6 +233,8 @@ namespace Online
             HFONT pingFont = nullptr;
             Phase phase = Phase::Idle;
             bool host = false;
+            bool experimental = false;
+            bool modeChangeBlocked = false;
             std::wstring localName;
             std::wstring remoteName;
             int signalBars = 0;
@@ -300,7 +305,7 @@ namespace Online
 
         void DrawPanel(HDC dc)
         {
-            const bool experimental = ExperimentalSync();
+            const bool experimental = g_dialog.experimental;
             Fill(dc, Bounds(0, 0, kWidth, kHeight), kBackground);
             Box(dc, 0, 0, kWidth, 150, RGB(15, 15, 18));
             // OpenSmash's angular red and white cuts, kept clear of the controls.
@@ -311,7 +316,7 @@ namespace Online
             Fill(dc, Bounds(0, 0, kWidth, 3), kRed);
             Label(dc, L"PES 2013  /  ONLINE", g_dialog.smallFont, kRed, Bounds(28, 17, 262, 25));
             Label(dc, experimental ? L"PRUEBA DE AMISTOSO" : L"SALA PRIVADA",
-                g_dialog.titleFont, kText, Bounds(26, 43, 492, 63));
+                experimental ? g_dialog.experimentalTitleFont : g_dialog.titleFont, kText, Bounds(26, 43, 492, 63));
             const bool connected = g_dialog.phase == Phase::Connected;
             const bool room = InRoom(g_dialog.phase);
             const wchar_t* subtitle = experimental
@@ -427,16 +432,22 @@ namespace Online
         void RefreshDialog()
         {
             Status state;
+            bool experimental;
             {
                 std::lock_guard lock(g_session.mutex);
                 state = g_session.status;
+                experimental = g_session.experimental;
             }
 
             const bool active = InRoom(state.phase);
+            const bool changedMode = g_dialog.experimental != experimental;
             const bool layoutChanged = g_dialog.phase != state.phase || g_dialog.host != state.host ||
-                g_dialog.localName != state.localName || g_dialog.remoteName != state.remoteName;
+                g_dialog.localName != state.localName || g_dialog.remoteName != state.remoteName || changedMode;
             g_dialog.phase = state.phase;
             g_dialog.host = state.host;
+            g_dialog.experimental = experimental;
+            if (changedMode)
+                SetWindowTextW(g_dialog.window, experimental ? L"PES 2013 \u00b7 Prueba de amistoso" : L"PES 2013 \u00b7 Sala privada");
             g_dialog.localName = state.localName;
             g_dialog.remoteName = state.remoteName;
             const auto oldBars = g_dialog.signalBars;
@@ -456,9 +467,12 @@ namespace Online
                 if (text != current)
                     SetWindowTextW(control, text.c_str());
             };
-            updateText(g_dialog.status, state.message.empty() ? L"Sin conexi\u00f3n" : state.message);
+            if (!active)
+                g_dialog.modeChangeBlocked = false;
+            updateText(g_dialog.status, g_dialog.modeChangeBlocked ? L"Sal\u00ed de la sala actual para cambiar de modo."
+                : state.message.empty() ? L"Sin conexi\u00f3n" : state.message);
             updateText(g_dialog.shareCode, state.code);
-            if (!ExperimentalSync())
+            if (!experimental)
                 updateText(g_dialog.ping, state.phase == Phase::Connected && !state.ping ? L"Midiendo\u2026" : ping);
             updateText(g_dialog.localNameLabel, state.localName.empty() ? L"Vos" : state.localName);
             updateText(g_dialog.remoteNameLabel, state.phase != Phase::Connected ? L"Esperando al rival" :
@@ -471,7 +485,7 @@ namespace Online
                 ShowWindow(g_dialog.joinCode, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.shareCode, active && state.host ? SW_SHOW : SW_HIDE);
                 ShowWindow(g_dialog.copy, active && state.host ? SW_SHOW : SW_HIDE);
-                ShowWindow(g_dialog.ping, active && !ExperimentalSync() ? SW_SHOW : SW_HIDE);
+                ShowWindow(g_dialog.ping, active && !experimental ? SW_SHOW : SW_HIDE);
                 ShowWindow(g_dialog.stop, active ? SW_SHOW : SW_HIDE);
                 ShowWindow(g_dialog.playerName, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.saveName, active ? SW_HIDE : SW_SHOW);
@@ -665,7 +679,7 @@ namespace Online
             case WM_DESTROY:
                 KillTimer(window, kRefreshTimer);
                 StopRoom();
-                for (auto font : { g_dialog.titleFont, g_dialog.sectionFont, g_dialog.bodyFont,
+                for (auto font : { g_dialog.titleFont, g_dialog.experimentalTitleFont, g_dialog.sectionFont, g_dialog.bodyFont,
                         g_dialog.smallFont, g_dialog.codeFont, g_dialog.invitationFont, g_dialog.pingFont })
                     DeleteObject(font);
                 DeleteObject(g_dialog.fieldBrush);
@@ -707,8 +721,7 @@ namespace Online
                 int(monitor.rcWork.left), int(monitor.rcWork.right - w));
             const int y = std::clamp(int(area.top + (area.bottom - area.top - h) / 2),
                 int(monitor.rcWork.top), int(monitor.rcWork.bottom - h));
-            const auto title = ExperimentalSync() ? L"PES 2013 \u00b7 Prueba de amistoso" : L"PES 2013 \u00b7 Sala privada";
-            HWND window = CreateWindowExW(exStyle, className, title, style,
+            HWND window = CreateWindowExW(exStyle, className, L"PES 2013 \u00b7 Sala privada", style,
                 x, y, w, h, owner, nullptr, instance, nullptr);
             if (!window)
                 return nullptr;
@@ -718,7 +731,8 @@ namespace Online
                 return CreateFontW(-Px(height), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                     OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
             };
-            g_dialog.titleFont = font(L"Bahnschrift Condensed", ExperimentalSync() ? 49 : 57, FW_BOLD);
+            g_dialog.titleFont = font(L"Bahnschrift Condensed", 57, FW_BOLD);
+            g_dialog.experimentalTitleFont = font(L"Bahnschrift Condensed", 49, FW_BOLD);
             g_dialog.sectionFont = font(L"Segoe UI", 23, FW_SEMIBOLD);
             g_dialog.bodyFont = font(L"Segoe UI", 15, FW_SEMIBOLD);
             g_dialog.smallFont = font(L"Segoe UI", 13, FW_SEMIBOLD);
@@ -780,15 +794,36 @@ namespace Online
         }
     }
 
-    void ToggleRoomDialog(HWND gameWindow)
+    void ToggleRoomDialog(HWND gameWindow, bool experimental)
     {
-        if (g_dialog.window && IsWindowVisible(g_dialog.window))
+        if (!g_dialog.window && !CreateDialogWindow(gameWindow))
+            return;
+
+        const bool requestedMode = experimental || ExperimentalSyncFromEnvironment();
+        bool differentMode;
+        bool changedMode = false;
+        {
+            std::lock_guard lock(g_session.mutex);
+            differentMode = g_session.experimental != requestedMode;
+            if (differentMode && !InRoom(g_session.status.phase))
+            {
+                g_session.experimental = requestedMode;
+                g_session.status = {};
+                changedMode = true;
+            }
+        }
+
+        g_dialog.modeChangeBlocked = differentMode && !changedMode;
+        if (!differentMode && IsWindowVisible(g_dialog.window))
         {
             HideDialog(g_dialog.window);
             return;
         }
-        if (!g_dialog.window && !CreateDialogWindow(gameWindow))
-            return;
+        if (changedMode)
+        {
+            SetWindowTextW(g_dialog.hostAddress, L"127.0.0.1");
+            SetWindowTextW(g_dialog.joinCode, L"");
+        }
         RefreshDialog();
         ShowWindow(g_dialog.window, SW_SHOWNORMAL);
         SetForegroundWindow(g_dialog.window);
@@ -830,6 +865,12 @@ namespace Online
     {
         std::lock_guard lock(g_session.mutex);
         return g_session.room;
+    }
+
+    std::shared_ptr<Room> ConnectedInputRoom()
+    {
+        std::lock_guard lock(g_session.mutex);
+        return g_session.experimental && g_session.status.phase == Phase::Connected ? g_session.room : nullptr;
     }
 
     std::wstring RoomPlayerName(bool local)

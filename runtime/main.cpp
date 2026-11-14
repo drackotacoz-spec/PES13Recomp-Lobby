@@ -121,8 +121,7 @@ namespace
         for (const PPCFuncMapping* m = PPCFuncMappings; m->guest != 0; ++m, ++count)
             PPC_LOOKUP_FUNC(base, m->guest) = m->host;
 #ifdef _WIN32
-        if (std::getenv("PES_FRAME_TRACE") || std::getenv("PES_EXPERIMENTAL_SYNC"))
-            PPC_LOOKUP_FUNC(base, 0x821B0EA8) = Online::RunGuestFrame;
+        PPC_LOOKUP_FUNC(base, 0x821B0EA8) = Online::RunGuestFrame;
 #endif
         return count;
     }

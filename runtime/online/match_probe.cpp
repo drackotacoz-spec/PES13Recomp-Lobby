@@ -1,4 +1,5 @@
 #include "match_probe.h"
+#include "network_trial.h"
 
 #include <gpu/gpu.h>
 #include <guest_memory.h>
@@ -7,7 +8,6 @@
 #include <array>
 #include <atomic>
 #include <cstdio>
-#include <cstdlib>
 
 namespace
 {
@@ -58,27 +58,6 @@ namespace
         };
     }
 
-    FILE* MatchTrace()
-    {
-        static FILE* trace = []() -> FILE*
-        {
-            const char* path = std::getenv("PES_MATCH_TRACE");
-            if (!path || !*path) return nullptr;
-            FILE* file = std::fopen(path, "w");
-            if (!file)
-            {
-                std::perror("PES_MATCH_TRACE");
-                return nullptr;
-            }
-            std::fputs("callback,guest_thread,caller,gpu_frame,manager_before,step_before,clock_before,period_start_before,rng_before,period_before,"
-                       "manager_after,step_after,clock_after,period_start_after,rng_after,period_after,result,"
-                       "call,parent_call,gameplay_before,gameplay_after,fingerprint_before,fingerprint_after\n", file);
-            std::fflush(file);
-            return file;
-        }();
-        return trace;
-    }
-
     std::atomic<uint64_t> g_nextCall{1};
     thread_local uint64_t g_activeCall = 0;
 }
@@ -87,7 +66,7 @@ namespace Online
 {
     void TraceMatchCall(uint32_t guestAddress, PPCFunc* original, PPCContext& ctx, uint8_t* base)
     {
-        FILE* trace = MatchTrace();
+        FILE* trace = NetworkTrialLog(TrialLog::Match);
         if (!trace)
         {
             original(ctx, base);

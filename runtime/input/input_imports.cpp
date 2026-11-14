@@ -25,6 +25,7 @@
 
 #ifdef _WIN32
 #   include <online/frame_probe.h>
+#   include <online/network_trial.h>
 #   include <online/room.h>
 #   include <online/room_dialog.h>
 #   ifndef WIN32_LEAN_AND_MEAN
@@ -199,9 +200,13 @@ namespace
 
     void TracePad(const PPCContext& ctx, uint32_t user, bool connected, const PadState& pad, uint32_t packet, bool synced)
     {
+#ifdef _WIN32
+        FILE* trace = Online::NetworkTrialLog(Online::TrialLog::Gamepads);
+#else
         static const char* path = std::getenv("PES_PAD_TRACE");
         if (!path || !*path) return;
         static FILE* trace = std::fopen(path, "w");
+#endif
         if (!trace) return;
         static std::mutex traceMutex;
         std::lock_guard lock(traceMutex);
@@ -257,8 +262,7 @@ GUEST_IMPORT(XamInputGetCapabilities)
 {
     const uint32_t user = ctx.r3.u32 & 0xFF, caps = ctx.r5.u32;
 #ifdef _WIN32
-    static const bool sync = std::getenv("PES_EXPERIMENTAL_SYNC") != nullptr;
-    const bool secondOnlinePad = user == 1 && sync && Online::ConnectedRoom();
+    const bool secondOnlinePad = user == 1 && Online::NetworkTrialInputEnabled() && Online::ConnectedInputRoom();
 #else
     const bool secondOnlinePad = false;
 #endif

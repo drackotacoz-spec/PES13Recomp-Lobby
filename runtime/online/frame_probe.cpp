@@ -1,4 +1,5 @@
 #include "frame_probe.h"
+#include "network_trial.h"
 
 #include "room.h"
 #include "room_dialog.h"
@@ -9,7 +10,6 @@
 
 #include <array>
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 
 namespace
@@ -75,18 +75,11 @@ namespace Online
 {
     void RunGuestFrame(PPCContext& ctx, uint8_t* base)
     {
-        static const bool sync = std::getenv("PES_EXPERIMENTAL_SYNC") != nullptr;
-        static FILE* trace = []() -> FILE* {
-            const char* path = std::getenv("PES_FRAME_TRACE");
-            FILE* file = path && *path ? std::fopen(path, "w") : nullptr;
-            if (file)
-                std::fputs("guest_frame_field_before,guest_frame_field_after,sequence,exchanged,home_buttons,away_buttons,match_start,match_remaining,game_random,gpu_frame\n", file);
-            return file;
-        }();
+        FILE* trace = NetworkTrialLog(TrialLog::Frames);
         const uint32_t before = trace ? GuestFrameCount() : 0;
-        if (sync)
+        if (NetworkTrialInputEnabled())
         {
-            if (const auto room = ConnectedRoom())
+            if (const auto room = ConnectedInputRoom())
                 ExchangeFrameInputs(room);
         }
         sub_821B0EA8(ctx, base);

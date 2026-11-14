@@ -94,6 +94,7 @@ if (WIN32)
         runtime/online/lobby_client.cpp
         runtime/online/lobby_dialog.cpp
         runtime/online/match_probe.cpp
+        runtime/online/network_trial.cpp
         runtime/online/player_profile.cpp
         runtime/online/room.cpp
         runtime/online/room_dialog.cpp

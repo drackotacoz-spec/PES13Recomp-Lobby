@@ -1,6 +1,7 @@
 #include "lobby_dialog.h"
 #include "chat_reactions.h"
 #include "lobby_client.h"
+#include "network_trial.h"
 #include "player_profile.h"
 #include "room_dialog.h"
 
@@ -33,7 +34,7 @@ namespace Online
         enum Control : int
         {
             Players = 201, PublicRooms, Invitations, Connect, OpenRoom, JoinRoom, Invite, Accept, Decline,
-            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend
+            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend, NetworkTrial
         };
 
         struct Row
@@ -67,6 +68,7 @@ namespace Online
             HBRUSH panelBrush = nullptr;
             float scale = 1.0f;
             bool started = false;
+            bool trialUnavailable = false;
             std::wstring validation;
             std::wstring chatError;
             std::wstring chatText;
@@ -151,7 +153,7 @@ namespace Online
             Stripe(dc, 627, 16, kRed);
             Fill(dc, Rect(0, 0, kWidth, 3), kRed);
             Label(dc, L"PES 2013 / MULTIJUGADOR", g_dialog.smallFont, kRed, Rect(26, 12, 410, 23));
-            Label(dc, L"LOBBY", g_dialog.titleFont, kText, Rect(24, 30, 520, 51));
+            Label(dc, L"LOBBY", g_dialog.titleFont, kText, Rect(24, 30, 300, 51));
             Label(dc, L"Tu apodo", g_dialog.bodyFont, kMuted, Rect(27, 82, 80, 28));
             Box(dc, Rect(108, 82, 219, 28), kField);
             FocusBorder(dc, Rect(108, 82, 219, 28), g_dialog.nickname);
@@ -197,10 +199,11 @@ namespace Online
             const bool primary = !disabled && (item.CtlID == OpenRoom || item.CtlID == JoinRoom ||
                 item.CtlID == Invite || item.CtlID == Accept || item.CtlID == ChatSend ||
                 (item.CtlID == Connect && !g_dialog.state.connected));
+            const bool trial = item.CtlID == NetworkTrial && !disabled;
             const COLORREF background = disabled ? kPanel : pressed ? kRed : primary ? kText : kField;
-            const COLORREF foreground = disabled ? kMuted : pressed || primary ? kBackground : kText;
+            const COLORREF foreground = disabled ? kMuted : pressed || primary ? kBackground : trial ? kAmber : kText;
             Fill(item.hDC, item.rcItem, background);
-            SetDCBrushColor(item.hDC, focused ? kRed : kLine);
+            SetDCBrushColor(item.hDC, focused ? kRed : trial ? kAmber : kLine);
             FrameRect(item.hDC, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
             Label(item.hDC, text, g_dialog.bodyFont, foreground, item.rcItem, DT_CENTER);
             if (focused)
@@ -361,7 +364,9 @@ namespace Online
             }
             UpdateChat(state, newRoom);
             std::wstring status = g_dialog.validation.empty() ? state.message : g_dialog.validation;
-            if (paired && !g_dialog.chatError.empty())
+            if (g_dialog.trialUnavailable)
+                status = L"No se pudo iniciar la prueba de amistoso por red.";
+            else if (paired && !g_dialog.chatError.empty())
                 status = g_dialog.chatError;
             else if (paired && !state.chatError.empty())
                 status = state.chatError;
@@ -378,6 +383,7 @@ namespace Online
 
         void Hide()
         {
+            g_dialog.trialUnavailable = false;
             ShowWindow(g_dialog.window, SW_HIDE);
             if (g_dialog.owner && IsWindowVisible(g_dialog.owner))
             {
@@ -419,6 +425,7 @@ namespace Online
         {
             using Lobby::Action;
             auto& client = Lobby::GetClient();
+            g_dialog.trialUnavailable = false;
             switch (id)
             {
             case Connect:
@@ -453,6 +460,15 @@ namespace Online
             case Direct:
                 Hide();
                 ToggleRoomDialog(g_dialog.owner);
+                break;
+            case NetworkTrial:
+                if (PrepareNetworkTrial())
+                {
+                    Hide();
+                    ToggleRoomDialog(g_dialog.owner, true);
+                }
+                else
+                    g_dialog.trialUnavailable = true;
                 break;
             case ChatSend:
                 SendChat();
@@ -503,7 +519,8 @@ namespace Online
                 if (hit != HTCLIENT) return hit;
                 POINT cursor{ short(LOWORD(lParam)), short(HIWORD(lParam)) };
                 ScreenToClient(window, &cursor);
-                if (cursor.y < Px(78) && cursor.x < Px(718)) return HTCAPTION;
+                if (cursor.y < Px(78) && ChildWindowFromPointEx(window, cursor, CWP_SKIPINVISIBLE) == window)
+                    return HTCAPTION;
                 return HTCLIENT;
             }
             case WM_TIMER:
@@ -545,7 +562,8 @@ namespace Online
                 }
                 else if (HIWORD(wParam) == LBN_SELCHANGE)
                     UpdateButtons();
-                else if (HIWORD(wParam) == BN_CLICKED && (id == Direct || id == ChatSend || (id >= Connect && id <= Close)) &&
+                else if (HIWORD(wParam) == BN_CLICKED &&
+                    (id == Direct || id == ChatSend || id == NetworkTrial || (id >= Connect && id <= Close)) &&
                     IsWindowEnabled(GetDlgItem(window, id)))
                 {
                     SelectAction(id);
@@ -628,6 +646,7 @@ namespace Online
             SendMessageW(g_dialog.nickname, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
                 MAKELPARAM(Px(7), Px(7)));
             SendMessageW(g_dialog.nickname, EM_SETCUEBANNER, FALSE, LPARAM(L"2 a 15 caracteres"));
+            button(L"Probar amistoso por red", 344, 35, 228, 36, NetworkTrial);
             g_dialog.players.window = list(40, L"Jugadores", Players);
             button(L"Invitar", 40, 339, 206, 36, Invite);
             g_dialog.rooms.window = list(295, L"Salas p\u00fablicas", PublicRooms);
