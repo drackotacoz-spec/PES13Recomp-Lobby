@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.4.0-launcher/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.0-updates/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.4.0-launcher/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.4.0-launcher)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.0-updates/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.0-updates)
 
 ## Cómo arrancar
 
@@ -11,6 +11,12 @@
 3. **Tocá Preparar y, cuando termine, tocá Jugar.** El asistente genera el juego en tu PC. Si hacen falta herramientas de Microsoft, el asistente las descarga y Windows puede pedirte permiso. Si pide reiniciar, volvé a abrir **`PES 2013.exe`** después. Las próximas veces, ese mismo archivo abre el juego.
 
 El ZIP trae Python portátil para el lobby. La preparación se hace desde la ventana de **PES 2013**, con el avance en pantalla.
+
+## Buscá actualizaciones desde F1
+
+Si venís de la **v0.4.0**, cerrá el juego y extraé el ZIP nuevo sobre su carpeta. Abrí **PES 2013.exe** y tocá **Actualizar juego** para aprovechar la ISO y la compilación que ya tenés.
+
+A partir de la **v0.5.0**, abrí **F1 → Buscar actualizaciones**. Si hay una versión nueva, cerrá la ventana del juego, volvé al lanzador y tocá **Instalar actualización**. El lanzador verifica la descarga de GitHub y solo compila las partes que cambiaron. Si cambia el recompilador o su configuración, puede volver a generar código a partir de tu ISO ya preparada.
 
 ## Probá un amistoso desde una sala pública
 
@@ -33,6 +39,7 @@ El lobby automático de esta versión funciona en la misma PC. Para probar entre
 - **Falló la preparación.** La ventana muestra el motivo y dónde quedó el registro. Si Microsoft pide reiniciar, hacelo antes de abrir el juego de nuevo.
 - **La ISO no pasa la verificación.** Revisá que sea la edición **Europa (Es,Pt) de Xbox 360**. El asistente verifica que coincida con la versión usada para compilar.
 - **El lobby de F1 no conecta.** Revisá que hayas extraído el ZIP completo, incluida la carpeta `Soporte\Python`, y volvé a abrir PES.
+- **La prueba por código da un error de red.** Anotá el número que muestra. **10049** indica que la IP que escribió el anfitrión no está disponible en su PC. **10061** indica que la conexión fue rechazada. Confirmá que la sala siga abierta y revisá la IP y el puerto. [Códigos de Winsock](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2).
 
 ## Código y créditos
 

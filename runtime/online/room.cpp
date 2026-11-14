@@ -35,6 +35,8 @@ namespace Online
         constexpr auto kInputTimeout = 3s;
         constexpr auto kPingInterval = 1s;
         constexpr auto kPingTimeout = 3s;
+        constexpr std::string_view kConnectTimeoutMessage =
+            "La sala no respondi\u00f3. Revisen la IPv4, el puerto TCP, el firewall y el router.";
         constexpr std::array<uint8_t, 4> kRoomTag{ 'P', '1', '3', 'R' };
         constexpr std::array<uint8_t, 4> kInputTag{ 'P', '1', '3', 'I' };
         constexpr std::array<uint8_t, 4> kPingTag{ 'P', '1', '3', 'P' };
@@ -138,7 +140,10 @@ namespace Online
             result.sin_family = AF_INET;
             result.sin_port = htons(port);
             const std::string address(text);
-            return InetPtonA(AF_INET, address.c_str(), &result.sin_addr) == 1;
+            if (InetPtonA(AF_INET, address.c_str(), &result.sin_addr) != 1)
+                return false;
+            const auto firstOctet = ntohl(result.sin_addr.s_addr) >> 24;
+            return firstOctet > 0 && firstOctet < 224;
         }
 
         std::string AddressText(const sockaddr_in& endpoint)
@@ -237,6 +242,32 @@ namespace Online
 
     bool Room::SocketError(std::string_view reason, int code)
     {
+        switch (code)
+        {
+        case WSAEADDRINUSE:
+            reason = "El puerto TCP est\u00e1 en uso. Cerr\u00e1 la otra sala y volv\u00e9 a intentar.";
+            break;
+        case WSAEACCES:
+            reason = "Windows bloque\u00f3 el puerto TCP. Revis\u00e1 si otra sala lo usa o si est\u00e1 reservado.";
+            break;
+        case WSAECONNREFUSED:
+            reason = "Conexi\u00f3n rechazada. Confirm\u00e1 la IPv4 y que la sala siga abierta en ese puerto TCP.";
+            break;
+        case WSAETIMEDOUT:
+            reason = kConnectTimeoutMessage;
+            break;
+        case WSAENETUNREACH:
+        case WSAEHOSTUNREACH:
+            reason = "Windows no encuentra una ruta hasta esa IPv4. Revis\u00e1 la red y el c\u00f3digo.";
+            break;
+        case WSAENETDOWN:
+            reason = "Windows no tiene acceso a la red. Revis\u00e1 tu conexi\u00f3n.";
+            break;
+        case WSAECONNABORTED:
+        case WSAECONNRESET:
+            reason = "Se cort\u00f3 la conexi\u00f3n TCP con el otro equipo.";
+            break;
+        }
         error_ = std::string(reason) + " (Winsock " + std::to_string(code) + ')';
         return false;
     }
@@ -275,7 +306,7 @@ namespace Online
         sockaddr_in endpoint{};
         if (!Address(bindAddress, port, endpoint))
         {
-            error_ = "La direccion de anfitrion debe ser IPv4.";
+            error_ = "Us\u00e1 la IPv4 local de tu PC. Para probar en la misma PC, us\u00e1 127.0.0.1.";
             return false;
         }
 
@@ -290,7 +321,10 @@ namespace Online
             listen(socket, SOMAXCONN) == SOCKET_ERROR ||
             getsockname(socket, reinterpret_cast<sockaddr*>(&endpoint), &size) == SOCKET_ERROR)
         {
-            SocketError("No se pudo abrir el puerto de la sala.", WSAGetLastError());
+            const int code = WSAGetLastError();
+            SocketError(code == WSAEADDRNOTAVAIL
+                ? "Esa IPv4 no pertenece a tu PC. En Crear sala, us\u00e1 la IPv4 local de tu PC."
+                : "No se pudo abrir el puerto de la sala.", code);
             Close();
             return false;
         }
@@ -381,9 +415,9 @@ namespace Online
         if (!StartWinsock()) return false;
 
         sockaddr_in endpoint{};
-        if (!port || !Address(address, port, endpoint) || endpoint.sin_addr.s_addr == INADDR_ANY)
+        if (!port || !Address(address, port, endpoint))
         {
-            error_ = "Ingresa la direccion IPv4 y el puerto de la sala.";
+            error_ = "El c\u00f3digo debe incluir una IPv4 v\u00e1lida del anfitri\u00f3n y su puerto TCP.";
             return false;
         }
 
@@ -412,7 +446,8 @@ namespace Online
             if (result != Wait::Ready)
             {
                 if (result == Wait::Failed) SocketError("No se pudo conectar con la sala.", WSAGetLastError());
-                else error_ = result == Wait::Cancelled ? "Conexion cancelada." : "La sala no respondio.";
+                else if (result == Wait::Cancelled) error_ = "Conexi\u00f3n cancelada.";
+                else error_ = kConnectTimeoutMessage;
             }
             else if (getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&connectionError), &size) == SOCKET_ERROR)
                 SocketError("No se pudo comprobar la conexion.", WSAGetLastError());
@@ -429,10 +464,15 @@ namespace Online
         std::ranges::copy(secret, request.begin() + 8);
         Handshake response{};
         const auto deadline = Clock::now() + kHandshakeTimeout;
-        if (!Transfer(request, true, deadline, stop) || !Transfer(response, false, deadline, stop) ||
-            !ValidHandshake(response, kHostRole, mode_))
+        if (!Transfer(request, true, deadline, stop) || !Transfer(response, false, deadline, stop))
         {
-            if (!stop.stop_requested()) error_ = "La sala rechazo la conexion. Revisa el codigo y que ambos usen la misma version de PES.";
+            if (!stop.stop_requested()) error_ += " Revisen el c\u00f3digo y que ambos usen el mismo modo y versi\u00f3n.";
+            ClosePeer();
+            return false;
+        }
+        if (!ValidHandshake(response, kHostRole, mode_))
+        {
+            error_ = "La sala respondi\u00f3 con otro protocolo. Ambos deben usar el mismo modo y versi\u00f3n de PES.";
             ClosePeer();
             return false;
         }

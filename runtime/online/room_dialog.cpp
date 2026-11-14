@@ -58,7 +58,13 @@ namespace Online
 
         std::wstring Wide(std::string_view text)
         {
-            return { text.begin(), text.end() };
+            if (text.empty()) return {};
+            const int length = int(text.size());
+            const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), length, nullptr, 0);
+            if (!count) return { text.begin(), text.end() };
+            std::wstring wide(size_t(count), L'\0');
+            MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), length, wide.data(), count);
+            return wide;
         }
 
         void Update(uint64_t revision, Status status, std::shared_ptr<Room> room = {})
@@ -152,7 +158,8 @@ namespace Online
                             Update(revision, { Phase::Error, Wide(room->Error()), {} });
                             return;
                         }
-                        code = Wide(destination.address + ":" + std::to_string(room->Port()) + "/" + room->Token());
+                        const std::string address = destination.address == "localhost" ? "127.0.0.1" : destination.address;
+                        code = Wide(address + ":" + std::to_string(room->Port()) + "/" + room->Token());
                         Status waiting{ Phase::Hosting, L"Esperando a tu rival\u2026", code, true };
                         waiting.localName = name;
                         Update(revision, std::move(waiting));
@@ -350,7 +357,7 @@ namespace Online
                 Box(dc, 28, 173, 337, 182, kSurface);
                 Box(dc, 383, 173, 337, 182, kSurface);
                 Label(dc, L"Crear sala", g_dialog.sectionFont, kText, Bounds(44, 183, 300, 29));
-                Label(dc, L"Direcci\u00f3n IPv4 de tu PC", g_dialog.smallFont, kMuted, Bounds(44, 218, 300, 17));
+                Label(dc, L"IPv4 local de tu PC", g_dialog.smallFont, kMuted, Bounds(44, 218, 300, 17));
                 Label(dc, L"Unirte a una sala", g_dialog.sectionFont, kText, Bounds(399, 183, 300, 29));
                 Label(dc, L"C\u00f3digo de invitaci\u00f3n", g_dialog.smallFont, kMuted, Bounds(399, 218, 300, 17));
                 Box(dc, 28, 373, 692, 76, kSurface);
@@ -391,7 +398,7 @@ namespace Online
                 }
             }
 
-            Box(dc, 28, 467, 692, 36, kSurface);
+            Box(dc, 28, 459, 692, 46, kSurface);
             const auto dot = g_dialog.phase == Phase::Error ? kRed
                 : connected ? kGreen : room ? kAmber : kMuted;
             Fill(dc, Bounds(43, 480, 9, 9), dot);
@@ -665,7 +672,7 @@ namespace Online
                 {
                     auto address = ReadAscii(g_dialog.hostAddress);
                     if (address.empty())
-                        ShowInputError(L"Escrib\u00ed la direcci\u00f3n IPv4 de tu PC.");
+                        ShowInputError(L"Escrib\u00ed la IPv4 local de tu PC. Us\u00e1 127.0.0.1 para probar en la misma PC.");
                     else if (auto name = SaveDialogName(false); !name.empty())
                         StartRoom(true, { std::move(address), 0, {} }, std::move(name));
                     break;
@@ -799,8 +806,8 @@ namespace Online
                 103, 213, 235, 30, kLocalNameLabel);
             g_dialog.remoteNameLabel = control(L"STATIC", L"", g_dialog.sectionFont, SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
                 458, 213, 235, 30, kRemoteNameLabel);
-            g_dialog.status = control(L"STATIC", L"", g_dialog.bodyFont, WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
-                63, 471, 640, 27, kStatus);
+            g_dialog.status = control(L"STATIC", L"", g_dialog.bodyFont, WS_VISIBLE | SS_LEFT | SS_NOPREFIX,
+                63, 466, 640, 35, kStatus);
             g_dialog.ping = control(L"STATIC", L"", g_dialog.pingFont, SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
                 551, 323, 100, 37, kPing);
             g_dialog.stop = button(L"Salir de la sala", 399, 528, 145, 34, kStop);

@@ -36,9 +36,32 @@ El servicio conserva hasta 40 entradas de ese emparejamiento. El cliente
 usa el identificador de la pareja al enviar mensajes para descartar envíos
 si ya cambió la sala.
 
-Para operar entre redes falta alojar el servicio y definir el transporte
-de juego con conexión negociada o retransmisión. El coordinador local
-no lanza el partido automáticamente.
+## Salas entre redes
+
+MK9 by Lauta usa un lobby compartido por WebSocket seguro (WSS) para
+publicar salas, emparejar jugadores y negociar la conexión. Cada sala
+intercambia mandos mediante ICE sobre UDP con libjuice. STUN ayuda a
+encontrar un camino directo entre redes y TURN retransmite el tráfico
+cuando ese camino falla. Cuando ambos jugadores están listos, cada juego
+reinicia la sesión con un perfil independiente, sincroniza los menús
+y aplica rollback durante la pelea. [Diseño del lobby de Lauta](https://github.com/machinebreak/mk9-lauta/blob/main/docs/online/lobby.md) · [Transporte ICE](https://github.com/machinebreak/mk9-lauta/blob/main/app/src/online/ice_link.cpp)
+
+En PES, tanto el lobby actual como la conexión automática de las salas
+públicas usan `127.0.0.1`. Para una primera prueba entre redes, alojaríamos
+un lobby de PES y un retransmisor propio con conexiones salientes seguras
+para las dos PCs. Así ambos jugadores podrían usar **F1 → Crear sala →
+Unirme** sin compartir direcciones ni configurar el router. El
+retransmisor pasaría las entradas de cada jugador al rival de su sala.
+
+La prueba necesita dos PCs en redes distintas, la misma versión y un
+amistoso de principio a fin. Los registros de las dos PCs deben confirmar
+qué cuadros consumieron las entradas, cuándo divergió el estado y qué pasó
+al abandonar o repetir el partido. El intercambio actual espera los mandos
+de ambos jugadores en cada cuadro. El RNG ya divergió en una prueba local
+con el reloj alineado, así que desplegar el transporte deja pendiente
+sincronizar el arranque, comprobar el estado del partido e implementar
+la restauración y la simulación de cuadros que requiere el rollback.
+[Plan de prueba entre dos PCs de Lauta](https://github.com/machinebreak/mk9-lauta/blob/main/docs/online/prueba-2pc.md)
 
 ## Pruebas de sincronización
 

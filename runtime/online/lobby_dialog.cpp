@@ -6,9 +6,11 @@
 #include "room_dialog.h"
 
 #include <commctrl.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <iterator>
 #include <utility>
 #include <vector>
@@ -34,7 +36,7 @@ namespace Online
         enum Control : int
         {
             Players = 201, PublicRooms, Invitations, Connect, OpenRoom, JoinRoom, Invite, Accept, Decline,
-            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend, NetworkTrial
+            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend, NetworkTrial, Updates
         };
 
         struct Row
@@ -496,6 +498,24 @@ namespace Online
                 else
                     g_dialog.trialUnavailable = true;
                 break;
+            case Updates:
+            {
+                std::wstring module(32768, L'\0');
+                const DWORD size = GetModuleFileNameW(nullptr, module.data(), DWORD(module.size()));
+                if (size > 0 && size < module.size())
+                {
+                    module.resize(size);
+                    const auto directory = std::filesystem::path(module).parent_path();
+                    const auto launcher = directory / L"PES 2013.exe";
+                    std::error_code error;
+                    if (std::filesystem::is_regular_file(launcher, error) &&
+                        reinterpret_cast<INT_PTR>(ShellExecuteW(g_dialog.window, L"open", launcher.c_str(),
+                            L"--actualizar", directory.c_str(), SW_SHOWNORMAL)) > 32)
+                        break;
+                }
+                g_dialog.validation = L"No se encontr\u00f3 el lanzador. Abr\u00ed PES 2013.exe desde la carpeta del ZIP.";
+                break;
+            }
             case ChatSend:
                 SendChat();
                 break;
@@ -589,7 +609,7 @@ namespace Online
                 else if (HIWORD(wParam) == LBN_SELCHANGE)
                     UpdateButtons();
                 else if (HIWORD(wParam) == BN_CLICKED &&
-                    (id == Direct || id == ChatSend || id == NetworkTrial || (id >= Connect && id <= Close)) &&
+                    (id == Direct || id == ChatSend || id == NetworkTrial || id == Updates || (id >= Connect && id <= Close)) &&
                     IsWindowEnabled(GetDlgItem(window, id)))
                 {
                     SelectAction(id);
@@ -672,7 +692,8 @@ namespace Online
             SendMessageW(g_dialog.nickname, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
                 MAKELPARAM(Px(7), Px(7)));
             SendMessageW(g_dialog.nickname, EM_SETCUEBANNER, FALSE, LPARAM(L"2 a 15 caracteres"));
-            button(L"Probar amistoso por red", 344, 35, 228, 36, NetworkTrial);
+            button(L"Probar amistoso por red", 332, 36, 190, 35, NetworkTrial);
+            button(L"Buscar actualizaciones", 531, 36, 174, 35, Updates);
             g_dialog.players.window = list(40, L"Jugadores", Players);
             button(L"Invitar", 40, 339, 206, 36, Invite);
             g_dialog.rooms.window = list(295, L"Salas p\u00fablicas", PublicRooms);
