@@ -5,8 +5,6 @@
 #include "room_dialog.h"
 
 #include <commctrl.h>
-#include <shellapi.h>
-#include <shlobj.h>
 
 #include <algorithm>
 #include <array>
@@ -35,7 +33,7 @@ namespace Online
         enum Control : int
         {
             Players = 201, PublicRooms, Invitations, Connect, OpenRoom, JoinRoom, Invite, Accept, Decline,
-            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend, PlayWithFriend
+            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend
         };
 
         struct Row
@@ -186,6 +184,7 @@ namespace Online
 
             Box(dc, Rect(24, 457, 748, 36), kPanel);
             Fill(dc, Rect(39, 470, 8, 8), connectionColor);
+            Label(dc, L"F1 / Esc \u00b7 Volver", g_dialog.smallFont, kMuted, Rect(25, 510, 126, 32));
         }
 
         void PaintButton(const DRAWITEMSTRUCT& item)
@@ -196,7 +195,7 @@ namespace Online
             const bool focused = (item.itemState & ODS_FOCUS) != 0;
             const bool pressed = (item.itemState & ODS_SELECTED) != 0;
             const bool primary = !disabled && (item.CtlID == OpenRoom || item.CtlID == JoinRoom ||
-                item.CtlID == Invite || item.CtlID == Accept || item.CtlID == ChatSend || item.CtlID == PlayWithFriend ||
+                item.CtlID == Invite || item.CtlID == Accept || item.CtlID == ChatSend ||
                 (item.CtlID == Connect && !g_dialog.state.connected));
             const COLORREF background = disabled ? kPanel : pressed ? kRed : primary ? kText : kField;
             const COLORREF foreground = disabled ? kMuted : pressed || primary ? kBackground : kText;
@@ -387,38 +386,6 @@ namespace Online
             }
         }
 
-        void ShowRemotePlay()
-        {
-            constexpr wchar_t guide[] =
-                L"El partido se juega en la PC del anfitri\u00f3n. Parsec transmite la pantalla y conecta el mando del invitado.\n\n"
-                L"1. Abran Parsec en ambas PC e inicien sesi\u00f3n. El anfitri\u00f3n activa Hosting en Settings > Host.\n"
-                L"2. El anfitri\u00f3n comparte su enlace con Share y acepta al invitado con permiso de mando (Gamepad).\n"
-                L"3. Conecten un mando cada uno, primero el del anfitri\u00f3n. El invitado pulsa un bot\u00f3n para activar el suyo.\n"
-                L"4. En PES, el anfitri\u00f3n abre Partido > Partido amistoso. Cada jugador mueve su mando a un lado distinto.\n\n"
-                L"Si el mando remoto no aparece, activ\u00e1 Parsec Virtual USB Gamepads en Host, eleg\u00ed Xbox 360 y reinici\u00e1 Parsec.\n\n"
-                L"\u00bfQuer\u00e9s abrir Parsec? Si falta, se abrir\u00e1 su p\u00e1gina oficial de descarga.";
-            if (MessageBoxW(g_dialog.window, guide, L"Jugar con un amigo \u00b7 Parsec",
-                MB_YESNO | MB_ICONINFORMATION) != IDYES)
-                return;
-
-            Hide();
-            const HWND owner = g_dialog.owner;
-            wchar_t programFiles[MAX_PATH]{};
-            if (SUCCEEDED(SHGetFolderPathW(owner, CSIDL_PROGRAM_FILES, nullptr, SHGFP_TYPE_CURRENT, programFiles)))
-            {
-                const auto folder = std::wstring(programFiles) + L"\\Parsec";
-                const auto exe = folder + L"\\parsecd.exe";
-                const DWORD attrs = GetFileAttributesW(exe.c_str());
-                if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY) &&
-                    INT_PTR(ShellExecuteW(owner, L"open", exe.c_str(), nullptr, folder.c_str(), SW_SHOWNORMAL)) > 32)
-                    return;
-            }
-            if (INT_PTR(ShellExecuteW(owner, L"open", L"https://parsec.app/downloads",
-                nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
-                MessageBoxW(owner, L"No se pudo abrir Parsec. Visit\u00e1 parsec.app/downloads en tu navegador.",
-                    L"Jugar con un amigo", MB_OK | MB_ICONERROR);
-        }
-
         void ConnectWithNickname()
         {
             wchar_t input[kMaxPlayerNameLength + 1]{};
@@ -486,9 +453,6 @@ namespace Online
             case Direct:
                 Hide();
                 ToggleRoomDialog(g_dialog.owner);
-                break;
-            case PlayWithFriend:
-                ShowRemotePlay();
                 break;
             case ChatSend:
                 SendChat();
@@ -581,8 +545,7 @@ namespace Online
                 }
                 else if (HIWORD(wParam) == LBN_SELCHANGE)
                     UpdateButtons();
-                else if (HIWORD(wParam) == BN_CLICKED &&
-                    (id == Direct || id == ChatSend || id == PlayWithFriend || (id >= Connect && id <= Close)) &&
+                else if (HIWORD(wParam) == BN_CLICKED && (id == Direct || id == ChatSend || (id >= Connect && id <= Close)) &&
                     IsWindowEnabled(GetDlgItem(window, id)))
                 {
                     SelectAction(id);
@@ -682,11 +645,10 @@ namespace Online
             control(L"BUTTON", L"Enviar", WS_TABSTOP | BS_OWNERDRAW, Rect(652, 355, 104, 38), ChatSend);
             g_dialog.status = control(L"STATIC", L"", WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
                 Rect(58, 460, 702, 30), Status);
-            button(L"Jugar con un amigo", 24, 506, 168, 36, PlayWithFriend);
-            button(L"Conexi\u00f3n directa", 204, 506, 138, 36, Direct);
-            button(L"Salir de la sala", 354, 506, 134, 36, Leave);
-            button(L"Conectarme", 500, 506, 136, 36, Connect);
-            button(L"Volver", 648, 506, 124, 36, Back);
+            button(L"Conexi\u00f3n directa", 155, 506, 150, 36, Direct);
+            button(L"Salir de la sala", 317, 506, 144, 36, Leave);
+            button(L"Conectarme", 473, 506, 144, 36, Connect);
+            button(L"Volver", 629, 506, 143, 36, Back);
             button(L"Cerrar", 718, 19, 54, 33, Close);
             SetTimer(window, kTimer, 150, nullptr);
             return window;
@@ -722,8 +684,7 @@ namespace Online
         const HWND window = g_dialog.window;
         if (!window || !IsWindowVisible(window) || (message.hwnd != window && !IsChild(window, message.hwnd)))
             return false;
-        if (message.message == WM_KEYDOWN &&
-            (message.wParam == VK_ESCAPE || (message.wParam == VK_F1 && !(GetKeyState(VK_CONTROL) & 0x8000))))
+        if (message.message == WM_KEYDOWN && (message.wParam == VK_F1 || message.wParam == VK_ESCAPE))
         {
             if (!(message.lParam & (1L << 30))) Hide();
             return true;
