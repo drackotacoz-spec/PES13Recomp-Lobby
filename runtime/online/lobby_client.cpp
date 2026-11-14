@@ -112,15 +112,21 @@ namespace Online::Lobby
             return LobbyService::Incompatible;
         }
 
-        std::filesystem::path FindLobbyScript()
+        std::filesystem::path ExecutableDirectory()
         {
             std::wstring module(32768, L'\0');
             const DWORD length = GetModuleFileNameW(nullptr, module.data(), DWORD(module.size()));
             if (!length || length >= module.size()) return {};
             module.resize(length);
 
+            return std::filesystem::path(module).parent_path();
+        }
+
+        std::filesystem::path FindLobbyScript()
+        {
+            const auto directory = ExecutableDirectory();
+            if (directory.empty()) return {};
             std::error_code error;
-            const auto directory = std::filesystem::path(module).parent_path();
             const auto installed = directory / L"PES13Recomp\\tools\\online-lobby\\lobby.py";
             if (std::filesystem::is_regular_file(installed, error))
                 return installed;
@@ -150,6 +156,12 @@ namespace Online::Lobby
         std::filesystem::path FindPython()
         {
             std::error_code error;
+            const auto directory = ExecutableDirectory();
+            if (!directory.empty())
+            {
+                const auto bundled = directory / L"Soporte\\Python\\python.exe";
+                if (std::filesystem::is_regular_file(bundled, error)) return bundled;
+            }
             const auto profile = WindowsEnvironment(L"USERPROFILE");
             if (!profile.empty())
             {

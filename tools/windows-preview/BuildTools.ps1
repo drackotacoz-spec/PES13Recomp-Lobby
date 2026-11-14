@@ -1,9 +1,48 @@
-function Test-PesBuildTools {
-    if (!$env:INCLUDE -or !$env:LIB) { return $false }
-    foreach ($tool in 'clang-cl.exe', 'lld-link.exe', 'cmake.exe', 'ninja.exe') {
-        if (!(Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) { return $false }
+function Write-PesBuildStatus([string]$Message, [switch]$Gui) {
+    if ($Gui) {
+        [Console]::Out.WriteLine("PES_STATUS: $Message")
+    } else {
+        Write-Host $Message
     }
-    return $true
+}
+
+function Test-PesBuildPath([string]$Paths, [string]$FileName) {
+    foreach ($directory in ($Paths -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($directory)) { continue }
+        try {
+            $path = [IO.Path]::Combine($directory.Trim().Trim('"'), $FileName)
+            if (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction SilentlyContinue) { return $true }
+        } catch { continue }
+    }
+    return $false
+}
+
+function Get-PesBuildToolProblems {
+    foreach ($tool in 'clang-cl.exe', 'lld-link.exe', 'ninja.exe') {
+        if (!(Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) { $tool }
+    }
+    $cmake = Get-Command 'cmake.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $cmakeVersion = $null
+    if ($cmake) {
+        try {
+            $versionLines = @(& $cmake.Source --version)
+            if ($LASTEXITCODE -eq 0 -and $versionLines.Count -and
+                $versionLines[0] -match '^cmake version ([0-9]+\.[0-9]+(?:\.[0-9]+)?)') {
+                $cmakeVersion = [version]$Matches[1]
+            }
+        } catch {}
+    }
+    if (!$cmakeVersion -or $cmakeVersion -lt [version]'3.20') { 'CMake 3.20 o posterior' }
+    if (!(Test-PesBuildPath $env:INCLUDE 'windows.h') -or !(Test-PesBuildPath $env:LIB 'kernel32.lib')) {
+        'Windows SDK x64'
+    }
+    if (!(Test-PesBuildPath $env:INCLUDE 'cstdio') -or !(Test-PesBuildPath $env:LIB 'libcmt.lib')) {
+        'MSVC x64'
+    }
+}
+
+function Test-PesBuildTools {
+    return @(Get-PesBuildToolProblems).Count -eq 0
 }
 
 function Find-PesBuildTools {
@@ -11,14 +50,43 @@ function Find-PesBuildTools {
     if (!$programFiles) { return }
     $vswhere = Join-Path $programFiles 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (!(Test-Path -LiteralPath $vswhere -PathType Leaf)) { return }
-    $json = & $vswhere -products '*' -format json -utf8 | Out-String
-    if ($LASTEXITCODE -eq 0 -and $json.Trim()) {
-        ConvertFrom-Json $json | Sort-Object { [version]$_.installationVersion } -Descending
+    try {
+        $info = New-Object Diagnostics.ProcessStartInfo
+        $info.FileName = $vswhere
+        $info.Arguments = '-products * -format json -utf8'
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true
+        $info.StandardOutputEncoding = [Text.Encoding]::UTF8
+        $process = [Diagnostics.Process]::Start($info)
+        try {
+            $json = $process.StandardOutput.ReadToEnd()
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0 -or !$json.TrimStart().StartsWith('[')) { return }
+        } finally { $process.Dispose() }
+        $instances = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+    } catch { return }
+
+    $valid = foreach ($instance in $instances) {
+        if ($instance -isnot [PSCustomObject]) { continue }
+        $path = $instance.installationPath
+        $version = $null
+        if ($path -isnot [string] -or $path -notmatch '^[A-Za-z]:[\\/]' -or
+            ![version]::TryParse([string]$instance.installationVersion, [ref]$version) -or
+            !(Test-Path -LiteralPath $path -PathType Container -ErrorAction SilentlyContinue)) { continue }
+        [PSCustomObject]@{
+            installationPath = $path
+            installationVersion = $version
+            productId = $instance.productId
+            channelId = $instance.channelId
+        }
     }
+    $valid | Sort-Object installationVersion -Descending
 }
 
-function Use-PesBuildTools {
-    if (Test-PesBuildTools) { return $true }
+function Use-PesBuildTools([ref]$Problems) {
+    $best = @(Get-PesBuildToolProblems)
+    if ($best.Count -eq 0) { return $true }
     foreach ($instance in Find-PesBuildTools) {
         $installation = $instance.installationPath
         $devCmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
@@ -31,14 +99,14 @@ function Use-PesBuildTools {
         $info.CreateNoWindow = $true
         $info.RedirectStandardOutput = $true
         $info.StandardOutputEncoding = [Text.Encoding]::Unicode
-        $process = [Diagnostics.Process]::Start($info)
         try {
-            $output = $process.StandardOutput.ReadToEnd()
-            $process.WaitForExit()
-            if ($process.ExitCode -ne 0) { continue }
-        } finally {
-            $process.Dispose()
-        }
+            $process = [Diagnostics.Process]::Start($info)
+            try {
+                $output = $process.StandardOutput.ReadToEnd()
+                $process.WaitForExit()
+                if ($process.ExitCode -ne 0) { continue }
+            } finally { $process.Dispose() }
+        } catch { continue }
 
         $previous = @{}
         foreach ($line in $output -split '\r?\n') {
@@ -60,19 +128,22 @@ function Use-PesBuildTools {
         }
         if (!$previous.ContainsKey('Path')) { $previous['Path'] = $env:Path }
         $env:Path = (@($bundled) + $env:Path) -join ';'
-        if (Test-PesBuildTools) { return $true }
+        $missing = @(Get-PesBuildToolProblems)
+        if ($missing.Count -eq 0) { return $true }
+        if ($missing.Count -lt $best.Count) { $best = $missing }
         foreach ($name in $previous.Keys) {
             [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
         }
     }
+    if ($Problems) { $Problems.Value = $best }
     return $false
 }
 
-function Install-PesBuildTools {
+function Install-PesBuildTools([switch]$Gui) {
     $url = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
     $setup = Join-Path ([IO.Path]::GetTempPath()) ("pes13-buildtools-{0}.exe" -f [guid]::NewGuid())
     try {
-        Write-Host 'Descargando el instalador oficial de Microsoft...'
+        Write-PesBuildStatus 'Descargando el instalador oficial de Microsoft...' -Gui:$Gui
         try {
             Invoke-WebRequest -Uri $url -OutFile $setup -UseBasicParsing -TimeoutSec 90
         } catch {
@@ -97,17 +168,17 @@ function Install-PesBuildTools {
             'Microsoft.VisualStudio.Component.Windows11SDK.26100') {
             $argsForSetup += @('--add', $component)
         }
-        Write-Host 'Si Windows pide permiso, toca Si. Espera a que Microsoft termine la instalacion.'
+        Write-PesBuildStatus 'Instalando herramientas de Microsoft. Si Windows pide permiso, toca Si.' -Gui:$Gui
         try {
             $setupProcess = Start-Process -FilePath $setup -ArgumentList $argsForSetup -Verb RunAs -Wait -PassThru
         } catch {
-            throw "No se pudo abrir el instalador de Microsoft. Si cancelaste el permiso de Windows, volve a intentar. $($_.Exception.Message)"
+            throw 'No se pudo abrir el instalador de Microsoft. Si cancelaste el permiso de Windows, volve a intentar.'
         }
         switch ($setupProcess.ExitCode) {
             0 { return }
-            3010 { throw 'Las herramientas se instalaron. Reinicia Windows y volve a abrir Preparar y compilar.cmd.' }
-            1641 { throw 'Microsoft inicio un reinicio. Despues, volve a abrir Preparar y compilar.cmd.' }
-            1602 { throw 'Se cancelo la instalacion de herramientas. Volve a abrir Preparar y compilar.cmd para reintentar.' }
+            3010 { throw 'Las herramientas se instalaron. Reinicia Windows y volve a abrir PES 2013.' }
+            1641 { throw 'Microsoft inicio un reinicio. Despues, volve a abrir PES 2013.' }
+            1602 { throw 'Se cancelo la instalacion de herramientas. Volve a abrir PES 2013 para reintentar.' }
             default { throw "El instalador de Microsoft devolvio el codigo $($setupProcess.ExitCode). Abri Visual Studio Installer y revisa el detalle." }
         }
     } finally {
@@ -117,16 +188,21 @@ function Install-PesBuildTools {
     }
 }
 
-function Initialize-PesBuildTools {
+function Initialize-PesBuildTools([switch]$Gui) {
+    Write-PesBuildStatus 'Buscando las herramientas de compilacion...' -Gui:$Gui
     if (Use-PesBuildTools) { return }
-    Write-Host 'Faltan herramientas de C++ para generar el juego desde tu ISO.'
-    Write-Host 'El asistente puede agregar Clang, CMake/Ninja y el SDK con Microsoft Build Tools.'
-    $answer = Read-Host 'Queres instalarlas ahora? [S/N]'
-    if ($answer.Trim() -notmatch '^(s|si|s\u00ed)$') {
-        throw 'Instalacion omitida. Volve a abrir Preparar y compilar.cmd y elegi S para continuar.'
+    if (!$Gui) {
+        Write-Host 'Faltan herramientas de C++ para generar el juego desde tu ISO.'
+        Write-Host 'El asistente puede agregar Clang, CMake/Ninja y el SDK con Microsoft Build Tools.'
+        $answer = Read-Host 'Queres instalarlas ahora? [S/N]'
+        if ($answer.Trim() -notmatch '^(s|si|s\u00ed)$') {
+            throw 'Instalacion omitida. Volve a abrir PES 2013 para continuar.'
+        }
     }
-    Install-PesBuildTools
-    if (!(Use-PesBuildTools)) {
-        throw 'No se encontraron todas las herramientas. En Visual Studio Installer revisa Clang, CMake/Ninja, MSVC x64 y Windows SDK. Luego volve a intentar.'
+    Install-PesBuildTools -Gui:$Gui
+    Write-PesBuildStatus 'Comprobando las herramientas instaladas...' -Gui:$Gui
+    $problems = @()
+    if (!(Use-PesBuildTools -Problems ([ref]$problems))) {
+        throw ("Faltan componentes de Microsoft Build Tools: {0}. Revisalos en Visual Studio Installer y reintenta." -f ($problems -join ', '))
     }
 }

@@ -1,19 +1,20 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.3.2-public-rooms/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.4.0-launcher/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.3.2-public-rooms/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.3.2-public-rooms)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.4.0-launcher/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.4.0-launcher)
 
 ## Cómo arrancar
 
-1. **Descargá el ZIP de arriba y extraelo** en una carpeta corta, como `C:\PES13`. Dejá unos **10 GB libres** para preparar el juego. Usá Windows de 64 bits y una placa de video con soporte para Vulkan. Para compilar, se recomiendan 16 GB de RAM.
-2. **Abrí `Preparar y compilar.cmd`.** Si faltan herramientas, escribí **S**, apretá **Enter** y aceptá el permiso de Windows. El asistente descarga **Microsoft Build Tools** con los componentes que hacen falta. Si pide reiniciar, reiniciá y volvé a abrir el mismo archivo.
-3. **Elegí tu propia ISO de PES 2013 para Xbox 360, edición Europa (Es,Pt)**. Esa edición trae español. La copia probada figura como `PES 2013 - Pro Evolution Soccer (Europe) (Es,Pt).iso`.
-4. **Esperá a que termine** y abrí **`Jugar PES 2013.exe`**. La primera compilación tarda. El asistente genera el ejecutable en tu PC a partir de tu disco.
+1. **Extraé todo el ZIP** en una carpeta corta, como `C:\PES13`. Dejá unos **10 GB libres** para preparar el juego, más el espacio que pida Microsoft si falta instalar sus herramientas. Usá Windows de 64 bits, una placa de video con soporte para Vulkan y, para compilar, unos 16 GB de RAM.
+2. **Abrí `PES 2013.exe`** y elegí tu propia ISO de **PES 2013 para Xbox 360, edición Europa (Es,Pt)**. La copia probada figura como `PES 2013 - Pro Evolution Soccer (Europe) (Es,Pt).iso`. Esa edición trae español.
+3. **Tocá Preparar y, cuando termine, tocá Jugar.** El asistente genera el juego en tu PC. Si hacen falta herramientas de Microsoft, el asistente las descarga y Windows puede pedirte permiso. Si pide reiniciar, volvé a abrir **`PES 2013.exe`** después. Las próximas veces, ese mismo archivo abre el juego.
+
+El ZIP trae Python portátil para el lobby. La preparación se hace desde la ventana de **PES 2013**, con el avance en pantalla.
 
 ## Probá un amistoso desde una sala pública
 
-1. Abrí dos ventanas de **Jugar PES 2013.exe** en la misma PC. En ambas, entrá a **Partido → Partido amistoso** y quedate donde se elige lado.
+1. Abrí dos ventanas de **PES 2013.exe** en la misma PC. En ambas, entrá a **Partido → Partido amistoso** y quedate donde se elige lado.
 2. Apretá **F1** en cada ventana y conectate con apodos distintos. En una elegí **Crear sala pública**. En la otra, elegí la sala de la lista y tocá **Unirme**. PES conecta los mandos automáticamente.
 3. Cuando diga **Conectados**, volvé al juego, asigná **Local** y **Visitante** y verificá que las dos copias muestren los mismos equipos. Si se desincronizan, los CSV se guardan solos en `registros-red`.
 
@@ -23,15 +24,15 @@ El lobby automático de esta versión funciona en la misma PC. Para probar entre
 
 > Las salas, las invitaciones y el chat se prueban con dos ventanas en la misma PC. **Conexión directa** sirve para medir el ping. El rollback sigue en desarrollo.
 
-1. Abrí dos ventanas de `Jugar PES 2013.exe`, apretá **F1** en cada una y conectate con apodos distintos. Si ambas usan el mismo apodo guardado, tocá **Desconectarme** en una, cambialo y volvé a conectarte.
+1. Abrí dos ventanas de `PES 2013.exe`, apretá **F1** en cada una y conectate con apodos distintos. Si ambas usan el mismo apodo guardado, tocá **Desconectarme** en una, cambialo y volvé a conectarte.
 2. Para probar una invitación privada de chat, seleccioná al otro jugador, tocá **Invitar** y aceptá desde la otra ventana.
 3. Cuando figure el rival, apretá **F2** para escribir y **Enter** para enviar. Probá `/casi`, `/var` o `/payaso` para tirar un emoji que aparece en las dos ventanas. **Esc** te devuelve al juego.
 
 ## Si te trabás
 
-- **El asistente sigue pidiendo herramientas.** En Visual Studio Installer, elegí **Modificar** en Build Tools. Agregá **Desarrollo para el escritorio con C++**, **MSVC x64/x86**, **Clang**, **CMake/Ninja** y **Windows SDK**. Después volvé a abrir el asistente. [Instalador oficial de Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe).
+- **Falló la preparación.** La ventana muestra el motivo y dónde quedó el registro. Si Microsoft pide reiniciar, hacelo antes de abrir el juego de nuevo.
 - **La ISO no pasa la verificación.** Revisá que sea la edición **Europa (Es,Pt) de Xbox 360**. El asistente verifica que coincida con la versión usada para compilar.
-- **El lobby de F1 no conecta.** Instalá **Python 3.10 o posterior** con la opción para agregarlo al PATH y volvé a abrir PES. Podés comprobarlo en una terminal nueva con `python --version`. [Python para Windows](https://www.python.org/downloads/windows/).
+- **El lobby de F1 no conecta.** Revisá que hayas extraído el ZIP completo, incluida la carpeta `Soporte\Python`, y volvé a abrir PES.
 
 ## Código y créditos
 
