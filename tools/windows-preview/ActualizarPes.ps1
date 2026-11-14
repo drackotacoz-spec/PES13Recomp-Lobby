@@ -201,7 +201,7 @@ try {
         throw 'La preparacion contiene un acceso enlazado.'
     }
     try {
-        $lock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite,
+        $lock = [IO.FileStream]::new($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite,
             [IO.FileShare]::None, 4096, [IO.FileOptions]::DeleteOnClose)
     } catch [IO.IOException] { throw 'Ya se esta preparando o actualizando el juego en esta carpeta.' }
     try {
