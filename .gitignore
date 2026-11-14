@@ -18,6 +18,7 @@ thirdparty/xenia_third_party/
 
 # Build
 build/
+/Jugar PES 2013.exe
 *.ipa
 .DS_Store
 

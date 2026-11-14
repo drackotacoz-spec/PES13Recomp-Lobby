@@ -60,7 +60,7 @@
 #include <windows.h> // VirtualQuery (debug dumps)
 #endif
 
-namespace Input { bool QueuePress(const std::string& names, double seconds); }
+namespace Input { bool QueuePress(const std::string& names, double seconds, uint32_t user); }
 
 namespace
 {
@@ -4541,6 +4541,7 @@ namespace Renderer
         // PES_CONTROL=<file>: live test control. Lines appended to the file run once each, at the
         // next presented frame; each is acknowledged in <file>.ack ("ok <t> <line>" / "error ...").
         //   press <buttons> [seconds]   e.g. "press a", "press down+a 0.3" (default 0.2 s)
+        //   press2 <buttons> [seconds]  scripted second pad (PES_TEST_SECOND_PAD=1)
         //   shot <name>                 presented frame -> userdata/shots/<name>.ppm
         //   capture <name>              per-draw capture of the next frame -> userdata/capture/<name>/
         //                               (acknowledged "done capture <name>" when written)
@@ -4582,7 +4583,9 @@ namespace Renderer
                         const int n = std::sscanf(line.c_str(), "%31s %255s %lf", cmd, arg, &seconds);
                         bool ok = n >= 2 || (n == 1 && (!std::strcmp(cmd, "surfaces") || !std::strcmp(cmd, "threads")));
                         if (ok && !std::strcmp(cmd, "press"))
-                            ok = Input::QueuePress(arg, seconds);
+                            ok = Input::QueuePress(arg, seconds, 0);
+                        else if (ok && !std::strcmp(cmd, "press2"))
+                            ok = Input::QueuePress(arg, seconds, 1);
                         else if (ok && !std::strcmp(cmd, "shot"))
                         {
                             std::error_code ec;

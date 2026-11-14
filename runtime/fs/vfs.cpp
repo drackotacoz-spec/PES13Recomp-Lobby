@@ -80,7 +80,9 @@ namespace Fs
         g_links["hdd:"] = "\\device\\harddisk0\\partition1";
         std::filesystem::create_directories(userRoot / "hdd");
         std::filesystem::create_directories(userRoot / "cache");
-        std::printf("[fs] game:\\ -> %s, user data -> %s\n", gameRoot.string().c_str(), userRoot.string().c_str());
+        std::printf("[fs] game:\\ -> %s, user data -> %s\n",
+            reinterpret_cast<const char*>(gameRoot.u8string().c_str()),
+            reinterpret_cast<const char*>(userRoot.u8string().c_str()));
     }
 
     void MountContent(const std::string& root, const std::filesystem::path& hostDirectory)
@@ -89,7 +91,8 @@ namespace Fs
         const std::string name = Normalize(root);
         g_devices["\\device\\content\\" + name] = { hostDirectory, false };
         g_links[name + ":"] = "\\device\\content\\" + name;
-        std::printf("[fs] content %s: -> %s\n", name.c_str(), hostDirectory.string().c_str());
+        std::printf("[fs] content %s: -> %s\n", name.c_str(),
+            reinterpret_cast<const char*>(hostDirectory.u8string().c_str()));
     }
 
     void UnmountContent(const std::string& root)

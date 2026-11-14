@@ -194,7 +194,12 @@ namespace
     void LoadTitleSetting(uint32_t id, Setting& s)
     {
         if (!IsTitleSpecific(id)) return;
-        FILE* f = std::fopen((ProfileDir() / Hex8(id)).string().c_str(), "rb");
+        const auto path = ProfileDir() / Hex8(id);
+#ifdef _WIN32
+        FILE* f = _wfopen(path.c_str(), L"rb");
+#else
+        FILE* f = std::fopen(path.c_str(), "rb");
+#endif
         if (!f) return;
         std::fseek(f, 0, SEEK_END);
         s.binary.resize(size_t(std::ftell(f)));

@@ -1,0 +1,14 @@
+#pragma once
+
+#include <cstdint>
+
+struct PPCContext;
+
+namespace Online
+{
+    struct PadInput;
+
+    void RunGuestFrame(PPCContext& ctx, uint8_t* base);
+    bool ReadFramePad(uint32_t user, PadInput& pad, uint32_t& packet);
+    PadInput ReadLocalPad();
+}

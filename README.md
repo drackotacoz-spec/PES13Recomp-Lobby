@@ -20,6 +20,11 @@
 </p>
 <p align="center"><sub>Running natively on Windows (Vulkan). Screenshots from the author's own copy of the game.</sub></p>
 
+> [!NOTE]
+> This fork includes a Windows preview of the F1 lobby, public rooms, private invitations and
+> F2 chat. The coordinator runs locally and pairs two game windows on the same PC.
+> [Guía de compilación y prueba en español](docs/lobby-preview-es.md).
+
 > [!IMPORTANT]
 > **You must own the game.** This repository contains no game code or game files, and no
 > builds of the game are distributed. You build it yourself from your own dump of the PES 2013

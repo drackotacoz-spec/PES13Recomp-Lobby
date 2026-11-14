@@ -2,6 +2,9 @@
 // (Moved unchanged out of presenter.cpp.)
 #include "window.h"
 #include "presenter.h"
+#include <online/chat_overlay.h>
+#include <online/room_dialog.h>
+#include <online/lobby_dialog.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #   define WIN32_LEAN_AND_MEAN
@@ -24,9 +27,27 @@
 namespace
 {
     HWND g_hwnd = nullptr;
+    constexpr UINT_PTR kChatTimer = 16;
 
     LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     {
+        if (msg == WM_KEYDOWN && wp == VK_F1)
+        {
+            if (!(lp & (1L << 30)))
+                Online::ToggleLobbyDialog(hwnd);
+            return 0;
+        }
+        if (msg == WM_KEYDOWN && wp == VK_F2)
+        {
+            if (!(lp & (1L << 30)))
+                Online::ToggleChatComposer(hwnd);
+            return 0;
+        }
+        if (msg == WM_TIMER && wp == kChatTimer)
+        {
+            Online::TickChatOverlay(hwnd);
+            return 0;
+        }
         if (msg == WM_CLOSE)
         {
             std::printf("[video] window closed - exiting\n");
@@ -49,6 +70,7 @@ namespace
         AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
         HWND hwnd = CreateWindowW(wc.lpszClassName, title.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
             CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, wc.hInstance, nullptr);
+        SetTimer(hwnd, kChatTimer, 65, nullptr);
         {
             std::lock_guard lock(*m);
             g_hwnd = hwnd;
@@ -58,8 +80,11 @@ namespace
         MSG msg;
         while (GetMessageW(&msg, nullptr, 0, 0) > 0)
         {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            if (!Online::HandleChatComposerMessage(msg) && !Online::HandleRoomDialogMessage(msg))
+            {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
         }
     }
 }

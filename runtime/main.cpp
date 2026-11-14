@@ -10,8 +10,10 @@
 #include <image.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <chrono>
 #include <thread>
@@ -29,6 +31,8 @@
 #include "debug/experiments.h"
 
 #ifdef _WIN32
+#   include "online/frame_probe.h"
+#   include "online/match_probe.h"
 #   ifndef WIN32_LEAN_AND_MEAN
 #       define WIN32_LEAN_AND_MEAN
 #   endif
@@ -41,6 +45,38 @@
 namespace
 {
 #ifdef _WIN32
+    int LaunchError(const wchar_t* message)
+    {
+        MessageBoxW(nullptr, message, L"PES 2013", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+
+    bool FindInstalledGame(std::filesystem::path& xexPath)
+    {
+        // Explorer and shortcuts can supply different working directories.
+        std::wstring modulePath(32768, L'\0');
+        const DWORD length = GetModuleFileNameW(nullptr, modulePath.data(), DWORD(modulePath.size()));
+        if (length == 0 || length >= modulePath.size()) return false;
+        modulePath.resize(length);
+
+        std::error_code error;
+        std::filesystem::current_path(std::filesystem::path(modulePath).parent_path(), error);
+        if (error) return false;
+
+        for (const auto* root : { L"game", L"PES13Recomp/game" })
+        {
+            const std::filesystem::path gameRoot(root);
+            const auto candidate = gameRoot / "xex" / "default.xex";
+            if (std::filesystem::is_regular_file(candidate, error) &&
+                std::filesystem::is_regular_file(gameRoot / "files" / "dt00_s.img", error))
+            {
+                xexPath = candidate;
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Last-chance crash report. Resolve "rva" with: tools\addr2func.ps1 <rva>
     LONG WINAPI CrashHandler(EXCEPTION_POINTERS* info)
     {
@@ -82,9 +118,23 @@ namespace
         for (size_t i = 0; i < PPC_CODE_SIZE / 4; ++i)
             table[i] = UnresolvedIndirectCall;
 
+#ifdef _WIN32
+        const bool traceMatch = std::getenv("PES_MATCH_TRACE") != nullptr;
+#endif
         size_t count = 0;
         for (const PPCFuncMapping* m = PPCFuncMappings; m->guest != 0; ++m, ++count)
-            PPC_LOOKUP_FUNC(base, m->guest) = m->host;
+        {
+            PPCFunc* host = m->host;
+#ifdef _WIN32
+            if (traceMatch)
+                host = Online::MatchProbeHook(uint32_t(m->guest), host);
+#endif
+            PPC_LOOKUP_FUNC(base, m->guest) = host;
+        }
+#ifdef _WIN32
+        if (std::getenv("PES_FRAME_TRACE") || std::getenv("PES_EXPERIMENTAL_SYNC"))
+            PPC_LOOKUP_FUNC(base, 0x821B0EA8) = Online::RunGuestFrame;
+#endif
         return count;
     }
 }
@@ -99,6 +149,16 @@ static int AppMain(int argc, char** argv)
 
     std::filesystem::path xexPath = "game/xex/default.xex";
     bool run = false;
+#ifdef _WIN32
+    const bool directLaunch = argc == 1;
+    if (directLaunch)
+    {
+        _putenv_s("PES_EXPERIMENTAL_SYNC", "");
+        if (!FindInstalledGame(xexPath))
+            return LaunchError(L"No se encontraron los archivos de PES 2013.\n\nAbr\u00ed Soporte\\Preparar ISO.cmd para importar tu copia.");
+        run = true;
+    }
+#endif
     bool countCalls = false;
     bool watchWptr = false;
     std::filesystem::path dumpImagePath;
@@ -121,13 +181,21 @@ static int AppMain(int argc, char** argv)
     const auto file = LoadFile(xexPath);
     if (file.empty())
     {
-        std::fprintf(stderr, "could not read %s\n", xexPath.string().c_str());
+#ifdef _WIN32
+        if (directLaunch)
+            return LaunchError(L"No se pudo leer la copia de PES 2013.");
+#endif
+        std::fprintf(stderr, "could not read %s\n", reinterpret_cast<const char*>(xexPath.u8string().c_str()));
         return 1;
     }
 
     Image image = Image::ParseImage(file.data(), file.size());
     if (!image.data || image.base != PPC_IMAGE_BASE)
     {
+#ifdef _WIN32
+        if (directLaunch)
+            return LaunchError(L"Los archivos del juego no corresponden a esta versi\u00f3n de PES 2013.");
+#endif
         std::fprintf(stderr, "XEX did not load at the expected base (got 0x%zX, want 0x%llX)\n",
             image.base, (unsigned long long)PPC_IMAGE_BASE);
         return 1;
@@ -217,6 +285,10 @@ static int AppMain(int argc, char** argv)
     Kernel::StartTimeStampUpdater();
     if (Video::Init(1280, 720, "PES 2013 (recompiled)"))
         Renderer::Init();
+#ifdef _WIN32
+    else if (directLaunch)
+        return LaunchError(L"No se pudo iniciar Vulkan. Revis\u00e1 el controlador de video.");
+#endif
 
     // Main guest thread: its own stack, PCR (r13), KTHREAD and TLS.
     Kernel::GuestThread* mainThread = Kernel::CreateGuestThread(module.stackSize);

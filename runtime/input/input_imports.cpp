@@ -8,11 +8,15 @@
 //     presses each button for 200 ms at the given second after launch (buttons: a b x y start
 //     back up down left right lb rb).
 #include <kernel/kernel.h>
+#include <kernel/thread.h>
 #include <guest_memory.h>
+#include <gpu/gpu.h>
 #include <video/presenter.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -20,6 +24,9 @@
 #include <vector>
 
 #ifdef _WIN32
+#   include <online/frame_probe.h>
+#   include <online/room.h>
+#   include <online/room_dialog.h>
 #   ifndef WIN32_LEAN_AND_MEAN
 #       define WIN32_LEAN_AND_MEAN
 #   endif
@@ -42,15 +49,19 @@ namespace
     constexpr uint16_t kUp = 0x0001, kDown = 0x0002, kLeft = 0x0004, kRight = 0x0008, kStart = 0x0010, kBack = 0x0020,
         kLB = 0x0100, kRB = 0x0200, kA = 0x1000, kB = 0x2000, kX = 0x4000, kY = 0x8000;
 
+#ifdef _WIN32
+    using PadState = Online::PadInput;
+#else
     struct PadState
     {
         uint16_t buttons = 0;
         uint8_t lt = 0, rt = 0;
         int16_t lx = 0, ly = 0, rx = 0, ry = 0;
     };
+#endif
 
     // ---------------------------------------------------------------- scripted input
-    struct ScriptPress { double at; uint16_t buttons; double duration = 0.2; };
+    struct ScriptPress { double at; uint16_t buttons; double duration = 0.2; uint32_t user = 0; };
     std::mutex g_scriptMutex; // live presses (Input::QueuePress) are added while the game polls
     std::vector<ScriptPress> g_script;
     std::once_flag g_scriptOnce;
@@ -85,14 +96,20 @@ namespace
         std::printf("[input] scripted input: %zu presses\n", g_script.size());
     }
 
-    uint16_t ScriptButtons()
+    bool TestSecondPad()
+    {
+        static const bool enabled = std::getenv("PES_TEST_SECOND_PAD") != nullptr;
+        return enabled;
+    }
+
+    uint16_t ScriptButtons(uint32_t user)
     {
         std::call_once(g_scriptOnce, LoadScript);
         const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_start).count();
         uint16_t b = 0;
         std::lock_guard lock(g_scriptMutex);
         for (const auto& p : g_script)
-            if (t >= p.at && t < p.at + p.duration) b |= p.buttons;
+            if (p.user == user && t >= p.at && t < p.at + p.duration) b |= p.buttons;
         return b;
     }
 
@@ -130,10 +147,9 @@ namespace
 #endif
 
     // Player 1's state: real controller (if any) + keyboard + script. Returns false if
-    // nothing is connected for this user (other players: real controllers only).
+    // nothing is connected for this user unless an explicit test pad was enabled.
     bool GetPad(uint32_t user, PadState& out, uint32_t& packet)
     {
-        static std::atomic<uint32_t> virtualPacket{ 0 };
         bool connected = false;
         out = {};
 #ifdef _WIN32
@@ -158,9 +174,9 @@ namespace
             packet = user < 4 ? hostPackets[user].load() : 0;
         }
 #endif
-        if (user != 0) return connected;
-        const PadState k = KeyboardState();
-        out.buttons |= k.buttons | ScriptButtons();
+        if (user != 0 && !(user == 1 && TestSecondPad())) return connected;
+        const PadState k = user == 0 ? KeyboardState() : PadState{};
+        out.buttons |= k.buttons | ScriptButtons(user);
         out.lt = std::max(out.lt, k.lt);
         out.rt = std::max(out.rt, k.rt);
         if (k.lx) out.lx = k.lx;
@@ -168,11 +184,49 @@ namespace
         if (k.rx) out.rx = k.rx;
         if (k.ry) out.ry = k.ry;
         // The packet number must change whenever the state changes.
-        static PadState last;
-        if (std::memcmp(&out, &last, sizeof(out)) != 0) { last = out; ++virtualPacket; }
-        if (!connected) packet = virtualPacket.load();
-        else packet += virtualPacket.load();
-        return true; // player 1 always has a (virtual) controller
+        static std::mutex packetMutex;
+        static std::array<PadState, 2> last{};
+        static std::array<uint32_t, 2> virtualPackets{};
+        std::lock_guard lock(packetMutex);
+        if (std::memcmp(&out, &last[user], sizeof(out)) != 0)
+        {
+            last[user] = out;
+            ++virtualPackets[user];
+        }
+        packet += virtualPackets[user];
+        return true;
+    }
+
+    void TracePad(const PPCContext& ctx, uint32_t user, bool connected, const PadState& pad, uint32_t packet)
+    {
+        static const char* path = std::getenv("PES_PAD_TRACE");
+        if (!path || !*path) return;
+        static FILE* trace = std::fopen(path, "w");
+        if (!trace) return;
+        static std::mutex traceMutex;
+        std::lock_guard lock(traceMutex);
+        std::fprintf(trace, "%llu,%08x,%u,%u,%u,%04x,%u,%u,%d,%d,%d,%d,",
+            static_cast<unsigned long long>(Gpu::FrameCount()), uint32_t(ctx.lr), user, unsigned(connected), packet,
+            unsigned(pad.buttons), unsigned(pad.lt), unsigned(pad.rt), pad.lx, pad.ly, pad.rx, pad.ry);
+        if (const Kernel::GuestThread* thread = Kernel::CurrentGuestThread())
+        {
+            std::fprintf(trace, "%u,", thread->threadId);
+            uint32_t frame = ctx.r1.u32;
+            for (int depth = 0; depth < 8; ++depth)
+            {
+                if (frame < thread->stackLimit || frame >= thread->stackBase) break;
+                const uint32_t previous = Memory::Load32(frame);
+                if (previous < frame + 8 || previous >= thread->stackBase) break;
+                std::fprintf(trace, "%s%08x", depth ? " " : "", Memory::Load32(previous - 8));
+                frame = previous;
+            }
+        }
+        else
+        {
+            std::fputc(',', trace);
+        }
+        std::fputc('\n', trace);
+        std::fflush(trace);
     }
 
     void StoreGamepad(uint32_t addr, uint16_t buttons, uint8_t lt, uint8_t rt, int16_t lx, int16_t ly, int16_t rx, int16_t ry)
@@ -187,14 +241,30 @@ namespace
     }
 }
 
+#ifdef _WIN32
+Online::PadInput Online::ReadLocalPad()
+{
+    PadInput pad{};
+    uint32_t packet = 0;
+    GetPad(0, pad, packet);
+    return pad;
+}
+#endif
+
 // DWORD XamInputGetCapabilities(u32 UserIndex, u32 Flags, X_INPUT_CAPABILITIES*)
 // X_INPUT_CAPABILITIES: u8 Type, u8 SubType, u16 Flags, X_INPUT_GAMEPAD Gamepad, X_INPUT_VIBRATION Vibration
 GUEST_IMPORT(XamInputGetCapabilities)
 {
     const uint32_t user = ctx.r3.u32 & 0xFF, caps = ctx.r5.u32;
-    if (user == 0 && caps)
+#ifdef _WIN32
+    static const bool sync = std::getenv("PES_EXPERIMENTAL_SYNC") != nullptr;
+    const bool secondOnlinePad = user == 1 && sync && Online::ConnectedRoom();
+#else
+    const bool secondOnlinePad = false;
+#endif
+    if ((user == 0 || (user == 1 && TestSecondPad()) || secondOnlinePad) && caps)
     {
-        // Player 1 is always a standard gamepad (keyboard/script fallback).
+        // Report a standard controller for the keyboard and the optional scripted pad.
         Memory::Store8(caps + 0x0, 1);   // XINPUT_DEVTYPE_GAMEPAD
         Memory::Store8(caps + 0x1, 1);   // XINPUT_DEVSUBTYPE_GAMEPAD
         Memory::Store16(caps + 0x2, 0);
@@ -229,7 +299,13 @@ GUEST_IMPORT(XamInputGetState)
     const uint32_t user = ctx.r3.u32 & 0xFF, state = ctx.r5.u32;
     PadState p;
     uint32_t packet = 0;
-    if (GetPad(user, p, packet))
+#ifdef _WIN32
+    const bool connected = Online::ReadFramePad(user, p, packet) || GetPad(user, p, packet);
+#else
+    const bool connected = GetPad(user, p, packet);
+#endif
+    TracePad(ctx, user, connected, p, packet);
+    if (connected)
     {
         if (state)
         {
@@ -268,8 +344,9 @@ GUEST_IMPORT(XamInputGetKeystrokeEx)
 // `names` may combine buttons with '+', e.g. "a" or "down+a". Returns false for unknown names.
 namespace Input
 {
-    bool QueuePress(const std::string& names, double seconds)
+    bool QueuePress(const std::string& names, double seconds, uint32_t user)
     {
+        if (user != 0 && !(user == 1 && TestSecondPad())) return false;
         std::call_once(g_scriptOnce, LoadScript);
         uint16_t buttons = 0;
         size_t pos = 0;
@@ -283,7 +360,7 @@ namespace Input
         }
         const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_start).count();
         std::lock_guard lock(g_scriptMutex);
-        g_script.push_back({ t, buttons, seconds });
+        g_script.push_back({ t, buttons, seconds, user });
         return true;
     }
 }

@@ -87,7 +87,20 @@ add_executable(pes13
 # Window behind the presenter: Win32 on Windows; SDL3 on Apple (thirdparty/SDL, zlib license),
 # where the window and event loop must own the main thread. SDL is not used on Windows.
 if (WIN32)
-    target_sources(pes13 PRIVATE runtime/video/window_win32.cpp)
+    target_sources(pes13 PRIVATE
+        runtime/online/chat_overlay.cpp
+        runtime/online/frame_probe.cpp
+        runtime/online/guest_nickname.cpp
+        runtime/online/lobby_client.cpp
+        runtime/online/lobby_dialog.cpp
+        runtime/online/match_probe.cpp
+        runtime/online/player_profile.cpp
+        runtime/online/room.cpp
+        runtime/online/room_dialog.cpp
+        runtime/video/window_win32.cpp
+    )
+    target_include_directories(pes13 PRIVATE tools/XenonRecomp/thirdparty/tomlplusplus/vendor)
+    target_link_libraries(pes13 PRIVATE ws2_32 bcrypt winhttp d2d1 dwrite)
 else()
     target_sources(pes13 PRIVATE runtime/video/window_sdl.cpp runtime/video/prompt_apple.mm)
     # Native text prompt (UIKit / AppKit): Objective-C++ with ARC, built by the C++ compiler.
@@ -133,6 +146,8 @@ target_include_directories(miniaudio PUBLIC thirdparty/miniaudio)
 target_link_libraries(pes13 PRIVATE PES13Recomp XenonUtils volk XeniaShader miniaudio)
 if (MSVC)
     # Map file: lets tools/addr2func.ps1 turn a crash offset into a sub_XXXXXXXX name.
+    set_target_properties(pes13 PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_link_options(pes13 PRIVATE /ENTRY:mainCRTStartup)
     target_link_options(pes13 PRIVATE "/MAP:${CMAKE_BINARY_DIR}/bin/pes13.map" /errorlimit:0)
 endif()
 
