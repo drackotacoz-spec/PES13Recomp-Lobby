@@ -31,7 +31,7 @@ namespace
 
     LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     {
-        if (msg == WM_KEYDOWN && wp == VK_F1)
+        if (msg == WM_KEYDOWN && wp == VK_F1 && !(GetKeyState(VK_CONTROL) & 0x8000))
         {
             if (!(lp & (1L << 30)))
                 Online::ToggleLobbyDialog(hwnd);
