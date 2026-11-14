@@ -54,7 +54,7 @@ function Get-PesUpdateFiles([string]$Zip, [string]$Staging, [string]$Tag) {
     $archive = [IO.Compression.ZipFile]::OpenRead($Zip)
     try {
         $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-        $files = [Collections.Generic.List[string]]::new()
+        $files = [ordered]@{}
         $total = 0L
         if ($archive.Entries.Count -gt 15000) { throw 'El paquete tiene demasiados archivos.' }
         foreach ($entry in $archive.Entries) {
@@ -66,15 +66,15 @@ function Get-PesUpdateFiles([string]$Zip, [string]$Staging, [string]$Tag) {
             if (!(Get-PesRelativePath $name)) { throw "El ZIP tiene una ruta no permitida: $name" }
             $total += $entry.Length
             if ($total -gt 350MB) { throw 'El paquete descomprimido es demasiado grande.' }
-            $destination = Get-PesDestination $Staging $name
-            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force
+            # Keep temporary paths short in Windows PowerShell and write names only at installation.
+            $destination = Join-Path $Staging "$($files.Count).new"
             [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destination)
-            $files.Add($name)
+            $files.Add($name, $destination)
         }
         $metadata = 'Soporte/version.txt'
         $manifest = 'Soporte/archivos-actualizables.txt'
         if (!$files.Contains($metadata) -or !$files.Contains($manifest) -or
-            (Get-Content -LiteralPath (Join-Path $Staging $metadata) -Raw).Trim() -cne $Tag) {
+            (Get-Content -LiteralPath $files[$metadata] -Raw).Trim() -cne $Tag) {
             throw 'El ZIP no corresponde a la version seleccionada.'
         }
         return $files
@@ -85,7 +85,7 @@ function Write-PesUpdateStatus([string]$Message) {
     [Console]::Out.WriteLine("PES_STATUS: $Message")
 }
 
-function Install-PesUpdate([string]$Root, [string]$Transaction, [string]$Staging, [string[]]$Files) {
+function Install-PesUpdate([string]$Root, [string]$Transaction, [Collections.IDictionary]$Files) {
     $gamePath = Join-Path $Root 'Jugar PES 2013.exe'
     if (!(Test-Path -LiteralPath $gamePath -PathType Leaf)) { throw 'Primero prepara PES 2013 con tu ISO.' }
     foreach ($game in Get-Process -Name 'Jugar PES 2013' -ErrorAction SilentlyContinue) {
@@ -103,11 +103,8 @@ function Install-PesUpdate([string]$Root, [string]$Transaction, [string]$Staging
     $manifest = 'Soporte/archivos-actualizables.txt'
     $version = 'Soporte/version.txt'
     $known = Get-Content -LiteralPath (Get-PesDestination $Root $manifest)
-    $nextFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($file in $Files) { $null = $nextFiles.Add($file) }
-
-    $remove = @($known | Where-Object { (Get-PesRelativePath $_) -and !$nextFiles.Contains($_) })
-    $paths = @($Files | Where-Object { $_ -notin $manifest, $version }) + $remove + @($manifest, $version)
+    $remove = @($known | Where-Object { (Get-PesRelativePath $_) -and !$Files.Contains($_) })
+    $paths = @($Files.Keys | Where-Object { $_ -notin $manifest, $version }) + $remove + @($manifest, $version)
     $buildChanged = $false
     $buildStarted = $false
     $regenerate = $false
@@ -127,17 +124,14 @@ function Install-PesUpdate([string]$Root, [string]$Transaction, [string]$Staging
                 $publishStarted = $true
             }
             $target = Get-PesDestination $Root $name
-            $incoming = Get-PesDestination $Staging $name
+            $incoming = $Files[$name]
             $exists = Test-Path -LiteralPath $target -PathType Leaf
-            $install = $nextFiles.Contains($name)
+            $install = $Files.Contains($name)
             if ($install -and $exists -and
                 (Get-FileHash -LiteralPath $target).Hash -eq (Get-FileHash -LiteralPath $incoming).Hash) { continue }
             if (!$install -and !$exists) { continue }
-            $backup = Join-Path (Join-Path $Transaction 'anteriores') $name
-            if ($exists) {
-                $null = New-Item -ItemType Directory -Path (Split-Path -Parent $backup) -Force
-                [IO.File]::Move($target, $backup)
-            }
+            $backup = Join-Path $Transaction "$($traces.Count).bak"
+            if ($exists) { [IO.File]::Move($target, $backup) }
             $traces.Add([pscustomobject]@{ Target = $target; Backup = $backup; Existed = $exists })
             if ($install) {
                 $null = New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force
@@ -225,8 +219,8 @@ try {
             (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $release.Hash) {
             throw 'La descarga no paso la verificacion. Intenta de nuevo.'
         }
-        $files = @(Get-PesUpdateFiles $zip $staging $release.Tag)
-        Install-PesUpdate $root $transaction $staging $files
+        $files = Get-PesUpdateFiles $zip $staging $release.Tag
+        Install-PesUpdate $root $transaction $files
         $absoluteTransaction = [IO.Path]::GetFullPath($transaction)
         $updateRoot = [IO.Path]::GetFullPath($updates).TrimEnd('\') + '\'
         if ($absoluteTransaction.StartsWith($updateRoot, [StringComparison]::OrdinalIgnoreCase)) {
