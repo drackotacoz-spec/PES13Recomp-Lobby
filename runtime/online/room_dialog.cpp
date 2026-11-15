@@ -3,6 +3,7 @@
 #include "lobby_client.h"
 #include "network_trial.h"
 #include "room.h"
+#include "room_tunnel.h"
 #include "player_profile.h"
 
 #include <commctrl.h>
@@ -33,6 +34,7 @@ namespace Online
         }
 
         enum class Phase { Idle, Hosting, Joining, Connected, Error };
+        enum class Route { Local, Direct, Tunnel };
 
         struct Status
         {
@@ -93,7 +95,13 @@ namespace Online
             std::string address;
             uint16_t port = 0;
             std::string token;
-            bool internet = false;
+            Route route = Route::Local;
+        };
+
+        struct TunneledRoom
+        {
+            std::unique_ptr<RoomTunnel> tunnel;
+            std::shared_ptr<Room> room;
         };
 
         bool ParseCode(std::string_view code, Destination& destination)
@@ -112,7 +120,10 @@ namespace Online
                 token.size() != 32 || token.find_first_not_of("0123456789abcdefABCDEF") != std::string_view::npos)
                 return false;
 
-            destination = { std::string(code.substr(0, colon)), uint16_t(port), std::string(token) };
+            const auto host = code.substr(0, colon);
+            const bool usesTunnel = RoomTunnel::IsHostname(host);
+            if (usesTunnel && port != 443) return false;
+            destination = { std::string(host), uint16_t(port), std::string(token), usesTunnel ? Route::Tunnel : Route::Local };
             return true;
         }
 
@@ -146,7 +157,7 @@ namespace Online
             try
             {
                 std::thread([hosting, destination = std::move(destination), name = std::move(name),
-                    listening = std::move(listening), revision, stop, experimental] {
+                    listening = std::move(listening), revision, stop, experimental]() mutable {
                     auto room = listening ? listening : std::make_shared<Room>(experimental ? Room::Mode::Input : Room::Mode::Latency);
                     if (!listening && !room->SetLocalName(PlayerNameUtf8(name)))
                     {
@@ -154,23 +165,44 @@ namespace Online
                         return;
                     }
                     std::wstring code;
+                    std::unique_ptr<RoomTunnel> tunnel;
                     if (hosting && !listening)
                     {
                         if (stop.stop_requested()) return;
-                        std::string address = destination.address.empty() ? DetectLocalIPv4() : destination.address;
+                        const bool relayed = destination.route == Route::Tunnel;
+                        const bool direct = destination.route == Route::Direct;
+                        std::string address = relayed ? "127.0.0.1" :
+                            destination.address.empty() ? DetectLocalIPv4() : destination.address;
                         if (address == "localhost") address = "127.0.0.1";
-                        if (destination.internet && address.starts_with("127."))
+                        if (direct && address.starts_with("127."))
                         {
                             Update(revision, { Phase::Error, L"Conect\u00e1 esta PC por Wi-Fi o cable para crear una sala por Internet.", {} });
                             return;
                         }
-                        const uint16_t port = experimental || destination.internet ? kExperimentalMatchPort : destination.port;
+                        const uint16_t port = relayed ? 0 : (experimental || direct ? kExperimentalMatchPort : destination.port);
                         if (!room->Host(address, port))
                         {
                             Update(revision, { Phase::Error, Wide(room->Error()), {} });
                             return;
                         }
-                        if (destination.internet)
+                        uint16_t advertisedPort = room->Port();
+                        if (relayed)
+                        {
+                            Status establishing{ Phase::Hosting, L"Abriendo el t\u00fanel de Internet\u2026", {}, true };
+                            establishing.localName = name;
+                            Update(revision, std::move(establishing));
+                            std::wstring error;
+                            tunnel = RoomTunnel::Host(room->Port(), stop, error);
+                            if (stop.stop_requested()) return;
+                            if (!tunnel)
+                            {
+                                Update(revision, { Phase::Error, std::move(error), {} });
+                                return;
+                            }
+                            address = tunnel->Hostname();
+                            advertisedPort = 443;
+                        }
+                        else if (direct)
                         {
                             Status detecting{ Phase::Hosting, L"Detectando la IPv4 p\u00fablica\u2026", {}, true };
                             detecting.localName = name;
@@ -183,12 +215,25 @@ namespace Online
                                 return;
                             }
                         }
-                        code = Wide(address + ":" + std::to_string(room->Port()) + "/" + room->Token());
-                        Status waiting{ Phase::Hosting, destination.internet
+                        code = Wide(address + ":" + std::to_string(advertisedPort) + "/" + room->Token());
+                        Status waiting{ Phase::Hosting, direct
                             ? L"Esperando a tu rival. El router debe redirigir TCP 28513 a esta PC."
                             : L"Esperando a tu rival\u2026", code, true };
                         waiting.localName = name;
                         Update(revision, std::move(waiting));
+                    }
+                    else if (!hosting && destination.route == Route::Tunnel)
+                    {
+                        std::wstring error;
+                        tunnel = RoomTunnel::Join(destination.address, stop, error);
+                        if (stop.stop_requested()) return;
+                        if (!tunnel)
+                        {
+                            Update(revision, { Phase::Error, std::move(error), {} });
+                            return;
+                        }
+                        destination.address = "127.0.0.1";
+                        destination.port = tunnel->Port();
                     }
 
                     const bool connected = hosting
@@ -196,7 +241,9 @@ namespace Online
                         : room->Join(destination.address, destination.port, destination.token, stop);
                     if (!connected)
                     {
-                        Update(revision, { Phase::Error, Wide(room->Error()), {} });
+                        Update(revision, { Phase::Error, destination.route == Route::Tunnel && !hosting
+                            ? L"No se pudo entrar por el t\u00fanel. Ped\u00ed un c\u00f3digo nuevo con la sala abierta."
+                            : Wide(room->Error()), {} });
                         return;
                     }
 
@@ -206,6 +253,11 @@ namespace Online
                         code, hosting };
                     joined.localName = name;
                     joined.remoteName = PlayerNameFromUtf8(room->PeerName());
+                    if (tunnel)
+                    {
+                        auto owner = std::make_shared<TunneledRoom>(TunneledRoom{ std::move(tunnel), room });
+                        room = std::shared_ptr<Room>(std::move(owner), room.get());
+                    }
                     Update(revision, std::move(joined), room);
                     if (experimental) return;
 
@@ -246,6 +298,7 @@ namespace Online
         constexpr int kLocalNameLabel = 109;
         constexpr int kRemoteNameLabel = 110;
         constexpr int kCreateInternet = 111;
+        constexpr int kCreateTunnel = 112;
         constexpr UINT_PTR kRefreshTimer = 1;
 
         constexpr COLORREF kBackground = RGB(10, 10, 12);
@@ -268,6 +321,7 @@ namespace Online
             HWND status = nullptr;
             HWND create = nullptr;
             HWND createInternet = nullptr;
+            HWND createTunnel = nullptr;
             HWND join = nullptr;
             HWND copy = nullptr;
             HWND stop = nullptr;
@@ -453,7 +507,7 @@ namespace Online
             const bool enabled = !(item.itemState & ODS_DISABLED);
             const bool pressed = item.itemState & ODS_SELECTED;
             const bool focused = item.itemState & ODS_FOCUS;
-            const bool primary = item.CtlID == kCreate || item.CtlID == kCreateInternet || item.CtlID == kJoin ||
+            const bool primary = item.CtlID == kCreate || item.CtlID == kCreateTunnel || item.CtlID == kJoin ||
                 item.CtlID == kCopy || item.CtlID == kSaveName;
             const bool stop = item.CtlID == kStop;
             const COLORREF fill = enabled && pressed ? kRed : enabled && primary ? kText : kField;
@@ -538,6 +592,7 @@ namespace Online
             {
                 ShowWindow(g_dialog.create, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.createInternet, active ? SW_HIDE : SW_SHOW);
+                ShowWindow(g_dialog.createTunnel, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.join, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.hostAddress, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.joinCode, active ? SW_HIDE : SW_SHOW);
@@ -700,17 +755,20 @@ namespace Online
                 {
                 case kCreate:
                 case kCreateInternet:
+                case kCreateTunnel:
                 {
                     auto address = ReadAscii(g_dialog.hostAddress);
+                    const auto route = LOWORD(wParam) == kCreateTunnel ? Route::Tunnel :
+                        LOWORD(wParam) == kCreateInternet ? Route::Direct : Route::Local;
                     if (auto name = SaveDialogName(false); !name.empty())
-                        StartRoom(true, { std::move(address), 0, {}, LOWORD(wParam) == kCreateInternet }, std::move(name));
+                        StartRoom(true, { std::move(address), 0, {}, route }, std::move(name));
                     break;
                 }
                 case kJoin:
                 {
                     Destination destination;
                     if (!ParseCode(ReadAscii(g_dialog.joinCode), destination))
-                        ShowInputError(L"Peg\u00e1 el c\u00f3digo completo que te pas\u00f3 tu amigo (IP:puerto/clave).");
+                        ShowInputError(L"Peg\u00e1 el c\u00f3digo completo que te pas\u00f3 tu amigo.");
                     else if (auto name = SaveDialogName(false); !name.empty())
                         StartRoom(false, std::move(destination), std::move(name));
                     break;
@@ -820,8 +878,9 @@ namespace Online
 
             g_dialog.hostAddress = edit(L"", 45, 246, 303, 15, 0);
             SendMessageW(g_dialog.hostAddress, EM_SETCUEBANNER, TRUE, LPARAM(L"Detectar autom\u00e1ticamente"));
-            g_dialog.create = button(L"En esta red", 44, 298, 150, 39, kCreate);
-            g_dialog.createInternet = button(L"Por Internet", 199, 298, 150, 39, kCreateInternet);
+            g_dialog.create = button(L"En esta red", 44, 298, 96, 39, kCreate);
+            g_dialog.createTunnel = button(L"Por Internet", 146, 298, 111, 39, kCreateTunnel);
+            g_dialog.createInternet = button(L"IP directa", 263, 298, 86, 39, kCreateInternet);
             g_dialog.joinCode = edit(L"", 400, 246, 303, 128, 0);
             g_dialog.join = button(L"Unirme", 399, 298, 305, 39, kJoin);
             g_dialog.shareCode = edit(L"", 45, 332, 372, 128, ES_READONLY);

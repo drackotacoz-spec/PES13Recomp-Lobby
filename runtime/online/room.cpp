@@ -382,7 +382,7 @@ namespace Online
         case WSAECONNREFUSED:
             reason = loopback
                 ? "Ese c\u00f3digo solo funciona en la misma PC. Ped\u00ed un c\u00f3digo nuevo a quien cre\u00f3 la sala."
-                : "Conexi\u00f3n rechazada. Confirm\u00e1 la IPv4 y que la sala siga abierta en ese puerto TCP.";
+                : "Conexi\u00f3n rechazada. Si est\u00e1n en dos casas, cre\u00e1 una sala nueva con Por Internet.";
             break;
         case WSAETIMEDOUT:
             reason = kConnectTimeoutMessage;

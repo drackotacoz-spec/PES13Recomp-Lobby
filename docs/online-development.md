@@ -38,6 +38,14 @@ si ya cambió la sala.
 
 ## Salas entre redes
 
+La prueba por código de la v0.5.6 permite elegir **Por Internet**. PES abre
+un puerto dinámico de loopback, publica un túnel temporal de Cloudflare
+para esa sala y usa el túnel saliente del invitado para transportar el
+protocolo de mandos con su clave habitual. Ambos ejecutables administran
+sus procesos del túnel y el código vence cuando se cierra la sala. Esta
+prueba permite medir el transporte entre redes con conexiones salientes.
+[Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
+
 MK9 by Lauta usa un lobby compartido por WebSocket seguro (WSS) para
 publicar salas, emparejar jugadores y negociar la conexión. Cada sala
 intercambia mandos mediante ICE sobre UDP con libjuice. STUN ayuda a

@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.5-version/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.6-tunnel/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.5-version/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.5-version)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.6-tunnel/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.6-tunnel)
 
 ## Cómo arrancar
 
@@ -26,9 +26,9 @@ Desde la **v0.5.5**, el panel de **F1** muestra la versión instalada junto al t
 2. Apretá **F1** en cada ventana y conectate con apodos distintos. En una elegí **Crear sala pública**. En la otra, elegí la sala de la lista y tocá **Unirme**. PES conecta los mandos automáticamente.
 3. Cuando diga **Conectados**, volvé al juego, asigná **Local** y **Visitante** y verificá que las dos copias muestren los mismos equipos. Si se desincronizan, los CSV se guardan solos en `registros-red`.
 
-El lobby automático de esta versión funciona en la misma PC. Para probar entre dos PCs, abrí **F1 → Probar amistoso por red**. Dejá vacía la IPv4 y elegí **En esta red** para usar la dirección local o **Por Internet** para que el juego consulte la IPv4 pública a través de ipify. Pasale el código completo a tu amigo para que lo pegue y toque **Unirme**. [Servicio de detección de IP](https://www.ipify.org/)
+El lobby automático de esta versión funciona en la misma PC. Para probar entre dos casas, los dos necesitan la **v0.5.6**. Abrí **F1 → Probar amistoso por red → Por Internet**. Cuando aparezca el código, pasáselo entero a tu amigo para que lo pegue y toque **Unirme**. El juego usa el túnel temporal de Cloudflare que viene en el ZIP. Funciona con conexiones salientes y se cierra con la sala. [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
 
-Para conectarse desde otra casa, el router del anfitrión tiene que redirigir el puerto TCP 28513 a su PC y Windows tiene que permitir la entrada al juego. El archivo **PRUEBA DE RED.txt** explica las condiciones para esa prueba.
+También podés usar **En esta red** en la misma red local. **IP directa** usa la IPv4 pública y el puerto TCP 28513 del anfitrión si ya configuró su router. El archivo **PRUEBA DE RED.txt** explica estas opciones. [Servicio de detección de IP](https://www.ipify.org/)
 
 ## Probá el lobby y el chat
 

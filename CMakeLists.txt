@@ -98,6 +98,7 @@ if (WIN32)
         runtime/online/player_profile.cpp
         runtime/online/room.cpp
         runtime/online/room_dialog.cpp
+        runtime/online/room_tunnel.cpp
         runtime/video/window_win32.cpp
     )
     target_include_directories(pes13 PRIVATE tools/XenonRecomp/thirdparty/tomlplusplus/vendor)
