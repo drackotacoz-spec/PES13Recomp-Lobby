@@ -858,7 +858,7 @@ namespace Online
             const auto build = control(L"STATIC", buildText.c_str(), WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
                 Rect(155, 48, 170, 24), BuildVersion);
             SendMessageW(build, WM_SETFONT, WPARAM(g_dialog.smallFont), FALSE);
-            button(L"Probar amistoso por red", 332, 36, 190, 35, NetworkTrial);
+            button(L"Jugar amistoso por red", 332, 36, 190, 35, NetworkTrial);
             g_dialog.updates = button(L"Buscar actualizaciones", 531, 36, 174, 35, Updates);
             g_dialog.players.window = list(40, L"Jugadores", Players);
             button(L"Invitar", 40, 339, 206, 36, Invite);
@@ -877,7 +877,7 @@ namespace Online
             control(L"BUTTON", L"Enviar", WS_TABSTOP | BS_OWNERDRAW, Rect(652, 355, 104, 38), ChatSend);
             g_dialog.status = control(L"STATIC", L"", WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
                 Rect(58, 460, 702, 30), Status);
-            button(L"Conexi\u00f3n directa", 155, 506, 150, 36, Direct);
+            button(L"Medir ping", 155, 506, 150, 36, Direct);
             button(L"Salir de la sala", 317, 506, 144, 36, Leave);
             button(L"Conectarme", 473, 506, 144, 36, Connect);
             button(L"Volver", 629, 506, 143, 36, Back);

@@ -80,14 +80,19 @@ namespace Online
             g_session.room = std::move(room);
         }
 
-        void StopRoom()
+        void StopRoomLocked()
         {
-            std::lock_guard lock(g_session.mutex);
             ++g_session.revision;
             g_session.stop.request_stop();
             g_session.room.reset();
             g_session.publicInput = false;
             g_session.status = { Phase::Idle, L"Sala cerrada.", {} };
+        }
+
+        void StopRoom()
+        {
+            std::lock_guard lock(g_session.mutex);
+            StopRoomLocked();
         }
 
         struct Destination
@@ -248,8 +253,9 @@ namespace Online
                     }
 
                     Status joined{ Phase::Connected,
-                        experimental ? L"Conectados. Vuelvan al juego y sigan desde la previa."
-                                     : L"Conexi\u00f3n de prueba establecida. El partido online sigue en desarrollo.",
+                        experimental ? (hosting ? L"Conectados. Volv\u00e9 al juego y mov\u00e9 tu mando hacia Local."
+                                                : L"Conectados. Volv\u00e9 al juego y mov\u00e9 tu mando hacia Visitante.")
+                                     : L"Conexi\u00f3n para medir ping establecida.",
                         code, hosting };
                     joined.localName = name;
                     joined.remoteName = PlayerNameFromUtf8(room->PeerName());
@@ -425,13 +431,13 @@ namespace Online
             Slash(dc, 662, 1, 18, 149, kText);
             Fill(dc, Bounds(0, 0, kWidth, 3), kRed);
             Label(dc, L"PES 2013  /  ONLINE", g_dialog.smallFont, kRed, Bounds(28, 17, 262, 25));
-            Label(dc, experimental ? L"PRUEBA DE AMISTOSO" : L"SALA PRIVADA",
+            Label(dc, experimental ? L"PRUEBA DE AMISTOSO" : L"PRUEBA DE PING",
                 experimental ? g_dialog.experimentalTitleFont : g_dialog.titleFont, kText, Bounds(26, 43, 492, 63));
             const bool connected = g_dialog.phase == Phase::Connected;
             const bool room = InRoom(g_dialog.phase);
             const wchar_t* subtitle = experimental
-                ? L"En los dos juegos, lleguen a la previa con los mismos equipos."
-                : connected ? L"Conexi\u00f3n directa entre jugadores" : L"Cre\u00e1 una sala o ingres\u00e1 un c\u00f3digo de invitaci\u00f3n.";
+                ? L"En las dos PCs, entren a Partido amistoso y vayan a elegir lado."
+                : L"Med\u00ed la latencia de tu conexi\u00f3n con otro jugador.";
             Label(dc, subtitle, g_dialog.bodyFont, experimental ? kAmber : kMuted, Bounds(28, 109, 504, 22));
 
             if (!room)
@@ -448,8 +454,10 @@ namespace Online
             }
             else
             {
-                DrawPlayer(dc, 28, g_dialog.host ? L"VOS / ANFITRI\u00d3N" : L"VOS / INVITADO", true);
-                DrawPlayer(dc, 383, g_dialog.host ? L"INVITADO" : L"ANFITRI\u00d3N", connected);
+                DrawPlayer(dc, 28, experimental ? (g_dialog.host ? L"VOS / LOCAL" : L"VOS / VISITANTE")
+                    : (g_dialog.host ? L"VOS / ANFITRI\u00d3N" : L"VOS / INVITADO"), true);
+                DrawPlayer(dc, 383, experimental ? (g_dialog.host ? L"VISITANTE" : L"LOCAL")
+                    : (g_dialog.host ? L"INVITADO" : L"ANFITRI\u00d3N"), connected);
                 Box(dc, 28, 283, 692, 101, kSurface);
                 if (g_dialog.host)
                     Label(dc, L"C\u00d3DIGO PARA INVITAR", g_dialog.smallFont, kMuted, Bounds(45, 293, 405, 24));
@@ -558,7 +566,7 @@ namespace Online
             g_dialog.host = state.host;
             g_dialog.experimental = experimental;
             if (changedMode)
-                SetWindowTextW(g_dialog.window, experimental ? L"PES 2013 \u00b7 Prueba de amistoso" : L"PES 2013 \u00b7 Sala privada");
+                SetWindowTextW(g_dialog.window, experimental ? L"PES 2013 \u00b7 Prueba de amistoso" : L"PES 2013 \u00b7 Prueba de ping");
             g_dialog.localName = state.localName;
             g_dialog.remoteName = state.remoteName;
             const auto oldBars = g_dialog.signalBars;
@@ -836,7 +844,7 @@ namespace Online
                 int(monitor.rcWork.left), int(monitor.rcWork.right - w));
             const int y = std::clamp(int(area.top + (area.bottom - area.top - h) / 2),
                 int(monitor.rcWork.top), int(monitor.rcWork.bottom - h));
-            HWND window = CreateWindowExW(exStyle, className, L"PES 2013 \u00b7 Sala privada", style,
+            HWND window = CreateWindowExW(exStyle, className, L"PES 2013 \u00b7 Prueba de ping", style,
                 x, y, w, h, owner, nullptr, instance, nullptr);
             if (!window)
                 return nullptr;
@@ -930,6 +938,8 @@ namespace Online
         {
             std::lock_guard lock(g_session.mutex);
             differentMode = g_session.experimental != requestedMode;
+            if (differentMode && requestedMode && InRoom(g_session.status.phase))
+                StopRoomLocked();
             if (differentMode && !InRoom(g_session.status.phase))
             {
                 g_session.experimental = requestedMode;

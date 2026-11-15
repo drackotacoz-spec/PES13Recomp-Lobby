@@ -198,7 +198,7 @@ namespace
         return true;
     }
 
-    void TracePad(const PPCContext& ctx, uint32_t user, bool connected, const PadState& pad, uint32_t packet, bool synced)
+    void TracePad(const PPCContext& ctx, uint32_t user, bool connected, const PadState& pad, uint32_t packet, const char* source)
     {
 #ifdef _WIN32
         FILE* trace = Online::NetworkTrialLog(Online::TrialLog::Gamepads);
@@ -230,7 +230,7 @@ namespace
         {
             std::fputc(',', trace);
         }
-        std::fprintf(trace, ",%s\n", synced ? "netplay" : "local");
+        std::fprintf(trace, ",%s\n", source);
         std::fflush(trace);
     }
 
@@ -305,11 +305,13 @@ GUEST_IMPORT(XamInputGetState)
     uint32_t packet = 0;
 #ifdef _WIN32
     const bool synced = Online::ReadFramePad(user, p, packet);
+    const bool online = synced || Online::ReadLatestRoomPad(user, p, packet);
 #else
     const bool synced = false;
+    const bool online = false;
 #endif
-    const bool connected = synced || GetPad(user, p, packet);
-    TracePad(ctx, user, connected, p, packet, synced);
+    const bool connected = online || GetPad(user, p, packet);
+    TracePad(ctx, user, connected, p, packet, synced ? "netplay" : online ? "netplay-latest" : "local");
     if (connected)
     {
         if (state)

@@ -10,7 +10,9 @@
 
 #include <array>
 #include <cstdio>
+#include <map>
 #include <memory>
+#include <mutex>
 
 namespace
 {
@@ -22,16 +24,23 @@ namespace
     constexpr uint32_t kMatchTicksAtStart = 0x836F6F7C;
     constexpr uint32_t kGameRandom = 0x8350886E;
 
+    struct RoomPads
+    {
+        std::array<Online::PadInput, 2> pads{};
+        std::array<uint32_t, 2> packets{};
+    };
+
     struct FrameInputs
     {
         std::weak_ptr<Online::Room> room;
-        std::array<Online::PadInput, 2> pads{};
-        std::array<uint32_t, 2> packets{};
+        RoomPads input;
         uint32_t sequence = 0;
         bool active = false;
     };
 
     thread_local FrameInputs g_frame;
+    std::mutex g_latestLock;
+    std::map<std::weak_ptr<Online::Room>, RoomPads, std::owner_less<>> g_latestPads;
 
     uint32_t GuestFrameCount()
     {
@@ -41,10 +50,11 @@ namespace
 
     void SetPad(size_t user, const Online::PadInput& input)
     {
-        if (g_frame.pads[user] != input)
+        auto& state = g_frame.input;
+        if (state.pads[user] != input)
         {
-            g_frame.pads[user] = input;
-            ++g_frame.packets[user];
+            state.pads[user] = input;
+            ++state.packets[user];
         }
     }
 
@@ -68,6 +78,12 @@ namespace
         SetPad(1 - localSlot, remote);
         ++g_frame.sequence;
         g_frame.active = true;
+        {
+            std::lock_guard lock(g_latestLock);
+            // An old in-flight frame cannot replace a new room's inputs.
+            std::erase_if(g_latestPads, [](const auto& entry) { return entry.first.expired(); });
+            g_latestPads.insert_or_assign(room, g_frame.input);
+        }
     }
 }
 
@@ -89,7 +105,7 @@ namespace Online
         {
             std::fprintf(trace, "%u,%u,%u,%u,%04x,%04x,%u,%u,%u,%llu\n",
                 before, GuestFrameCount(), g_frame.sequence, unsigned(exchanged),
-                unsigned(g_frame.pads[0].buttons), unsigned(g_frame.pads[1].buttons),
+                unsigned(g_frame.input.pads[0].buttons), unsigned(g_frame.input.pads[1].buttons),
                 Memory::Load32(kMatchTicksAtStart), Memory::Load32(kMatchTicksRemaining), unsigned(Memory::Load8(kGameRandom)),
                 static_cast<unsigned long long>(Gpu::FrameCount()));
             std::fflush(trace);
@@ -98,9 +114,22 @@ namespace Online
 
     bool ReadFramePad(uint32_t user, PadInput& pad, uint32_t& packet)
     {
-        if (!g_frame.active || user >= g_frame.pads.size()) return false;
-        pad = g_frame.pads[user];
-        packet = g_frame.packets[user];
+        if (!g_frame.active || user >= g_frame.input.pads.size()) return false;
+        pad = g_frame.input.pads[user];
+        packet = g_frame.input.packets[user];
+        return true;
+    }
+
+    bool ReadLatestRoomPad(uint32_t user, PadInput& pad, uint32_t& packet)
+    {
+        if (user >= 2 || !NetworkTrialInputEnabled()) return false;
+        const auto room = ConnectedInputRoom();
+        if (!room) return false;
+
+        std::lock_guard lock(g_latestLock);
+        const auto latest = g_latestPads.find(room);
+        pad = latest == g_latestPads.end() ? PadInput{} : latest->second.pads[user];
+        packet = latest == g_latestPads.end() ? 0 : latest->second.packets[user];
         return true;
     }
 }
