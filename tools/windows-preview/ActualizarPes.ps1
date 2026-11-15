@@ -105,6 +105,7 @@ function Install-PesUpdate([string]$Root, [string]$Transaction, [Collections.IDi
     $known = Get-Content -LiteralPath (Get-PesDestination $Root $manifest)
     $remove = @($known | Where-Object { (Get-PesRelativePath $_) -and !$Files.Contains($_) })
     $paths = @($Files.Keys | Where-Object { $_ -notin $manifest, $version }) + $remove + @($manifest, $version)
+    $buildInputs = '^PES13Recomp/(CMakeLists\.txt|cmake/|runtime/|config/|thirdparty/|tools/(XenonRecomp/|recomp\.ps1|gen-imports\.ps1))'
     $buildChanged = $false
     $buildStarted = $false
     $regenerate = $false
@@ -132,12 +133,15 @@ function Install-PesUpdate([string]$Root, [string]$Transaction, [Collections.IDi
             if (!$install -and !$exists) { continue }
             $backup = Join-Path $Transaction "$($traces.Count).bak"
             if ($exists) { [IO.File]::Move($target, $backup) }
-            $traces.Add([pscustomobject]@{ Target = $target; Backup = $backup; Existed = $exists })
+            $isBuildInput = $name -match $buildInputs
+            $traces.Add([pscustomobject]@{ Target = $target; Backup = $backup; Existed = $exists; BuildInput = $isBuildInput })
             if ($install) {
                 $null = New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force
                 [IO.File]::Copy($incoming, $target)
+                # ZIP timestamps can predate an existing build of an older version.
+                [IO.File]::SetLastWriteTimeUtc($target, [DateTime]::UtcNow)
             }
-            if ($name -match '^PES13Recomp/(CMakeLists\.txt|cmake/|runtime/|config/|thirdparty/|tools/(XenonRecomp/|recomp\.ps1|gen-imports\.ps1))') {
+            if ($isBuildInput) {
                 $buildChanged = $true
                 if ($name -match '^PES13Recomp/(config/|tools/(XenonRecomp/|recomp\.ps1|gen-imports\.ps1))') { $regenerate = $true }
             }
@@ -151,7 +155,12 @@ function Install-PesUpdate([string]$Root, [string]$Transaction, [Collections.IDi
             if (Test-Path -LiteralPath $change.Target -PathType Leaf) {
                 Remove-Item -LiteralPath $change.Target -Force
             }
-            if ($change.Existed) { [IO.File]::Move($change.Backup, $change.Target) }
+            if ($change.Existed) {
+                [IO.File]::Move($change.Backup, $change.Target)
+                if ($buildStarted -and $change.BuildInput) {
+                    [IO.File]::SetLastWriteTimeUtc($change.Target, [DateTime]::UtcNow)
+                }
+            }
         }
         if ($buildStarted) { [IO.File]::Copy($backupGame, $gamePath, $true) }
         if ($markerInfo) {

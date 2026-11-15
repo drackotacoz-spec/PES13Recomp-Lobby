@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.2-updates/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.3-updates/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.2-updates/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.2-updates)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.3-updates/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.3-updates)
 
 ## Cómo arrancar
 
@@ -16,7 +16,7 @@ El ZIP trae Python portátil para el lobby. La preparación se hace desde la ven
 
 Si venís de la **v0.4.0**, cerrá el juego y extraé el ZIP nuevo sobre su carpeta. Abrí **PES 2013.exe** y tocá **Actualizar juego** para aprovechar la ISO y la compilación que ya tenés.
 
-Con la **v0.5.2**, abrí **F1 → Buscar actualizaciones**. Si hay una versión nueva, cerrá la ventana del juego, volvé al lanzador y tocá **Instalar actualización**. El lanzador verifica la descarga de GitHub y solo compila las partes que cambiaron. Si cambia el recompilador o su configuración, puede volver a generar código a partir de tu ISO ya preparada.
+Con la **v0.5.3**, abrí **F1 → Buscar actualizaciones**. Si hay una versión nueva, cerrá la ventana del juego, volvé al lanzador y tocá **Instalar actualización**. El lanzador verifica la descarga de GitHub y solo compila las partes que cambiaron. Si cambia el recompilador o su configuración, puede volver a generar código a partir de tu ISO ya preparada.
 
 ## Probá un amistoso desde una sala pública
 
