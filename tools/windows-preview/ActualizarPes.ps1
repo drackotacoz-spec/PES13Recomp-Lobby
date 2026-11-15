@@ -1,4 +1,4 @@
-param([switch]$Gui, [switch]$Check, [switch]$Apply, [string]$TargetTag)
+param([switch]$Gui, [switch]$Check, [switch]$Apply, [string]$TargetTag, [switch]$InstalledRuntime)
 
 $ErrorActionPreference = 'Stop'
 $releaseRepo = 'drackotacoz-spec/PES13Recomp-Lobby'
@@ -181,7 +181,9 @@ if ($Gui) {
 try {
     if ($Check -eq $Apply) { throw 'Elegi buscar o instalar una actualizacion.' }
     $root = (Get-Item -LiteralPath (Split-Path -Parent $PSScriptRoot)).FullName
-    $tag = (Get-Content -LiteralPath (Get-PesDestination $root 'Soporte/version.txt') -Raw).Trim()
+    $versionFile = if ($Check -and $InstalledRuntime) { Join-Path $PSScriptRoot 'version-compilada.txt' }
+        else { Get-PesDestination $root 'Soporte/version.txt' }
+    $tag = (Get-Content -LiteralPath $versionFile -Raw).Trim()
     $current = Read-PesVersion $tag
     if (!$current) { throw 'No se pudo identificar la version instalada.' }
     $api = "https://api.github.com/repos/$releaseRepo/releases"

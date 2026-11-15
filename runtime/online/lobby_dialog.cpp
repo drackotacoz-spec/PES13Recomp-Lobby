@@ -10,8 +10,12 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -36,7 +40,7 @@ namespace Online
         enum Control : int
         {
             Players = 201, PublicRooms, Invitations, Connect, OpenRoom, JoinRoom, Invite, Accept, Decline,
-            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend, NetworkTrial, Updates
+            Leave, Back, Status, Close, Nickname, Direct, ChatHistory, ChatEntry, ChatSend, NetworkTrial, Updates, BuildVersion
         };
 
         struct Row
@@ -54,6 +58,18 @@ namespace Online
             std::vector<Row> rows;
         };
 
+        struct ReleaseVersion
+        {
+            std::array<unsigned, 3> numbers{};
+            std::wstring label;
+        };
+
+        struct CloseWindowsHandle
+        {
+            void operator()(void* handle) const { CloseHandle(handle); }
+        };
+        using WindowsHandle = std::unique_ptr<void, CloseWindowsHandle>;
+
         struct Dialog
         {
             HWND window = nullptr;
@@ -62,6 +78,7 @@ namespace Online
             HWND nickname = nullptr;
             HWND chatHistory = nullptr;
             HWND chatEntry = nullptr;
+            HWND updates = nullptr;
             HFONT titleFont = nullptr;
             HFONT bodyFont = nullptr;
             HFONT smallFont = nullptr;
@@ -71,6 +88,13 @@ namespace Online
             float scale = 1.0f;
             bool started = false;
             bool trialUnavailable = false;
+            std::filesystem::path directory;
+            std::optional<ReleaseVersion> installedVersion;
+            std::optional<ReleaseVersion> availableVersion;
+            WindowsHandle updateProcess;
+            WindowsHandle updateOutput;
+            ULONGLONG nextUpdateCheck = 0;
+            ULONGLONG updateDeadline = 0;
             std::wstring validation;
             std::wstring chatError;
             std::wstring chatText;
@@ -206,11 +230,12 @@ namespace Online
             const bool primary = !disabled && (item.CtlID == OpenRoom || item.CtlID == JoinRoom ||
                 item.CtlID == Invite || item.CtlID == Accept || item.CtlID == ChatSend ||
                 (item.CtlID == Connect && !g_dialog.state.connected));
-            const bool trial = item.CtlID == NetworkTrial && !disabled;
+            const bool highlighted = !disabled && (item.CtlID == NetworkTrial ||
+                (item.CtlID == Updates && g_dialog.availableVersion.has_value()));
             const COLORREF background = disabled ? kPanel : pressed ? kRed : primary ? kText : kField;
-            const COLORREF foreground = disabled ? kMuted : pressed || primary ? kBackground : trial ? kAmber : kText;
+            const COLORREF foreground = disabled ? kMuted : pressed || primary ? kBackground : highlighted ? kAmber : kText;
             Fill(item.hDC, item.rcItem, background);
-            SetDCBrushColor(item.hDC, focused ? kRed : trial ? kAmber : kLine);
+            SetDCBrushColor(item.hDC, focused ? kRed : highlighted ? kAmber : kLine);
             FrameRect(item.hDC, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
             Label(item.hDC, text, g_dialog.bodyFont, foreground, item.rcItem, DT_CENTER);
             if (focused)
@@ -227,6 +252,135 @@ namespace Online
             GetWindowTextW(window, existing, int(std::size(existing)));
             if (value != existing)
                 SetWindowTextW(window, std::wstring(value).c_str());
+        }
+
+        std::filesystem::path ExecutableDirectory()
+        {
+            std::wstring module(32768, L'\0');
+            const DWORD length = GetModuleFileNameW(nullptr, module.data(), DWORD(module.size()));
+            if (!length || length >= module.size()) return {};
+            module.resize(length);
+            return std::filesystem::path(module).parent_path();
+        }
+
+        std::optional<ReleaseVersion> ReadReleaseVersion(std::string_view line)
+        {
+            if (line.ends_with('\r')) line.remove_suffix(1);
+            if (!line.starts_with('v')) return std::nullopt;
+            const auto suffix = line.find('-');
+            if (suffix != line.npos)
+            {
+                const auto name = line.substr(suffix + 1);
+                if (name.empty() || name.size() > 40 ||
+                    name.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-") != name.npos)
+                    return std::nullopt;
+                line = line.substr(0, suffix);
+            }
+            ReleaseVersion version;
+            version.label.assign(line.begin(), line.end());
+            line.remove_prefix(1);
+            for (size_t index = 0; index < version.numbers.size(); ++index)
+            {
+                const auto separator = line.find('.');
+                if ((separator == line.npos) != (index == version.numbers.size() - 1))
+                    return std::nullopt;
+                const auto component = line.substr(0, separator);
+                if (component.empty() || component.size() > 5) return std::nullopt;
+                const auto end = component.data() + component.size();
+                const auto result = std::from_chars(component.data(), end, version.numbers[index]);
+                if (result.ptr != end || result.ec != std::errc{}) return std::nullopt;
+                line.remove_prefix(std::min(line.size(), component.size() + 1));
+            }
+            return version;
+        }
+
+        void StartUpdateCheck(ULONGLONG now)
+        {
+            g_dialog.nextUpdateCheck = now + 15 * 60 * 1000;
+            const auto script = g_dialog.directory / L"Soporte\\Actualizar PES 2013.ps1";
+            std::error_code error;
+            if (!g_dialog.installedVersion || !std::filesystem::is_regular_file(script, error)) return;
+
+            wchar_t system[MAX_PATH]{};
+            const auto length = GetSystemDirectoryW(system, DWORD(std::size(system)));
+            if (!length || length >= std::size(system)) return;
+            const auto powershell = std::filesystem::path(system) / L"WindowsPowerShell\\v1.0\\powershell.exe";
+            const auto argumentsStart = L"\"" + powershell.wstring() + L"\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"";
+            auto arguments = argumentsStart + script.wstring() + L"\" -Check -Gui -InstalledRuntime";
+
+            SECURITY_ATTRIBUTES attributes{ sizeof(attributes), nullptr, TRUE };
+            HANDLE reader = nullptr, writer = nullptr;
+            if (!CreatePipe(&reader, &writer, &attributes, 4096)) return;
+            WindowsHandle readPipe(reader), writePipe(writer);
+            if (!SetHandleInformation(reader, HANDLE_FLAG_INHERIT, 0)) return;
+            const auto nullDevice = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                &attributes, OPEN_EXISTING, 0, nullptr);
+            if (nullDevice == INVALID_HANDLE_VALUE) return;
+            const WindowsHandle noConsole(nullDevice);
+            SIZE_T attributeBytes = 0;
+            InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+            if (!attributeBytes) return;
+            std::vector<char> attributeStorage(attributeBytes);
+            const auto list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeStorage.data());
+            if (!InitializeProcThreadAttributeList(list, 1, 0, &attributeBytes)) return;
+            const std::unique_ptr<void, decltype([](void* value) {
+                DeleteProcThreadAttributeList(static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(value));
+            })> attributesOwner(list);
+            HANDLE childHandles[] = { writer, nullDevice };
+            if (!UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, childHandles,
+                    sizeof(childHandles), nullptr, nullptr)) return;
+
+            STARTUPINFOEXW startup{};
+            startup.StartupInfo.cb = sizeof(startup);
+            startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startup.StartupInfo.hStdInput = startup.StartupInfo.hStdError = nullDevice;
+            startup.StartupInfo.hStdOutput = writer;
+            startup.lpAttributeList = list;
+            PROCESS_INFORMATION process{};
+            if (!CreateProcessW(powershell.c_str(), arguments.data(), nullptr, nullptr, TRUE,
+                CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, g_dialog.directory.c_str(), &startup.StartupInfo, &process))
+                return;
+            CloseHandle(process.hThread);
+            g_dialog.updateProcess.reset(process.hProcess);
+            g_dialog.updateOutput = std::move(readPipe);
+            g_dialog.updateDeadline = now + 25 * 1000;
+        }
+
+        void RefreshUpdates()
+        {
+            const ULONGLONG now = GetTickCount64();
+            if (!g_dialog.updateProcess)
+            {
+                if (now >= g_dialog.nextUpdateCheck) StartUpdateCheck(now);
+                return;
+            }
+            const auto process = g_dialog.updateProcess.get();
+            const auto state = WaitForSingleObject(process, 0);
+            if (state == WAIT_TIMEOUT && now < g_dialog.updateDeadline) return;
+
+            DWORD exitCode = 0, available = 0, bytes = 0;
+            char output[128]{};
+            if (state == WAIT_TIMEOUT) TerminateProcess(process, 1);
+            if (state == WAIT_OBJECT_0 && GetExitCodeProcess(process, &exitCode) && exitCode == 0 &&
+                PeekNamedPipe(g_dialog.updateOutput.get(), nullptr, 0, nullptr, &available, nullptr) &&
+                available > 0 && available < std::size(output) &&
+                ReadFile(g_dialog.updateOutput.get(), output, available, &bytes, nullptr))
+            {
+                const std::string_view text(output, bytes);
+                constexpr std::string_view prefix = "PES_UPDATE:";
+                if (text.starts_with(prefix))
+                {
+                    const auto line = text.substr(prefix.size());
+                    auto version = ReadReleaseVersion(line.substr(0, line.find('\n')));
+                    if (version && version->numbers <= g_dialog.installedVersion->numbers) version.reset();
+                    g_dialog.availableVersion = std::move(version);
+                    SetLabel(g_dialog.updates, g_dialog.availableVersion
+                        ? L"Actualizar a " + g_dialog.availableVersion->label : L"Buscar actualizaciones");
+                    InvalidateRect(g_dialog.updates, nullptr, FALSE);
+                }
+            }
+            g_dialog.updateProcess.reset();
+            g_dialog.updateOutput.reset();
         }
 
         const Row* Selection(const Listing& list)
@@ -352,6 +506,7 @@ namespace Online
 
         void Refresh()
         {
+            RefreshUpdates();
             auto state = Lobby::GetClient().GetState();
             bool changed = state.connected != g_dialog.state.connected || state.busy != g_dialog.state.busy ||
                 state.publicInput != g_dialog.state.publicInput;
@@ -500,19 +655,12 @@ namespace Online
                 break;
             case Updates:
             {
-                std::wstring module(32768, L'\0');
-                const DWORD size = GetModuleFileNameW(nullptr, module.data(), DWORD(module.size()));
-                if (size > 0 && size < module.size())
-                {
-                    module.resize(size);
-                    const auto directory = std::filesystem::path(module).parent_path();
-                    const auto launcher = directory / L"PES 2013.exe";
-                    std::error_code error;
-                    if (std::filesystem::is_regular_file(launcher, error) &&
-                        reinterpret_cast<INT_PTR>(ShellExecuteW(g_dialog.window, L"open", launcher.c_str(),
-                            L"--actualizar", directory.c_str(), SW_SHOWNORMAL)) > 32)
-                        break;
-                }
+                const auto launcher = g_dialog.directory / L"PES 2013.exe";
+                std::error_code error;
+                if (!g_dialog.directory.empty() && std::filesystem::is_regular_file(launcher, error) &&
+                    reinterpret_cast<INT_PTR>(ShellExecuteW(g_dialog.window, L"open", launcher.c_str(),
+                        L"--actualizar", g_dialog.directory.c_str(), SW_SHOWNORMAL)) > 32)
+                    break;
                 g_dialog.validation = L"No se encontr\u00f3 el lanzador. Abr\u00ed PES 2013.exe desde la carpeta del ZIP.";
                 break;
             }
@@ -553,6 +701,12 @@ namespace Online
             {
                 const auto dc = reinterpret_cast<HDC>(wParam);
                 const auto control = reinterpret_cast<HWND>(lParam);
+                if (GetDlgCtrlID(control) == BuildVersion)
+                {
+                    SetTextColor(dc, kMuted);
+                    SetBkMode(dc, TRANSPARENT);
+                    return reinterpret_cast<LRESULT>(GetStockObject(HOLLOW_BRUSH));
+                }
                 const bool field = message == WM_CTLCOLORLISTBOX || control == g_dialog.nickname ||
                     control == g_dialog.chatHistory || control == g_dialog.chatEntry;
                 SetTextColor(dc, kText);
@@ -668,6 +822,13 @@ namespace Online
             };
             g_dialog.window = window;
             g_dialog.owner = owner;
+            g_dialog.directory = ExecutableDirectory();
+            if (!g_dialog.directory.empty())
+            {
+                std::ifstream marker(g_dialog.directory / L"Soporte\\version-compilada.txt");
+                char line[80]{};
+                if (marker.getline(line, std::size(line))) g_dialog.installedVersion = ReadReleaseVersion(line);
+            }
             g_dialog.titleFont = font(L"Bahnschrift Condensed", 45, FW_BOLD);
             g_dialog.bodyFont = font(L"Segoe UI", 15, FW_SEMIBOLD);
             g_dialog.smallFont = font(L"Segoe UI", 13, FW_SEMIBOLD);
@@ -692,8 +853,13 @@ namespace Online
             SendMessageW(g_dialog.nickname, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
                 MAKELPARAM(Px(7), Px(7)));
             SendMessageW(g_dialog.nickname, EM_SETCUEBANNER, FALSE, LPARAM(L"2 a 15 caracteres"));
+            const auto buildText = g_dialog.installedVersion
+                ? L"Versi\u00f3n " + g_dialog.installedVersion->label : L"Versi\u00f3n sin identificar";
+            const auto build = control(L"STATIC", buildText.c_str(), WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX,
+                Rect(155, 48, 170, 24), BuildVersion);
+            SendMessageW(build, WM_SETFONT, WPARAM(g_dialog.smallFont), FALSE);
             button(L"Probar amistoso por red", 332, 36, 190, 35, NetworkTrial);
-            button(L"Buscar actualizaciones", 531, 36, 174, 35, Updates);
+            g_dialog.updates = button(L"Buscar actualizaciones", 531, 36, 174, 35, Updates);
             g_dialog.players.window = list(40, L"Jugadores", Players);
             button(L"Invitar", 40, 339, 206, 36, Invite);
             g_dialog.rooms.window = list(295, L"Salas p\u00fablicas", PublicRooms);
