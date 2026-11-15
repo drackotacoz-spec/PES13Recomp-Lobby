@@ -72,10 +72,11 @@ namespace Online
 
         std::string QuickHostname(std::string_view logs)
         {
-            constexpr std::string_view scheme = "https://";
-            for (size_t start = logs.find(scheme); start != logs.npos; start = logs.find(scheme, start + scheme.size()))
+            // The published address is printed in the startup table. An API error can also contain a trycloudflare URL.
+            constexpr std::string_view addressRow = "|  https://";
+            for (size_t start = logs.find(addressRow); start != logs.npos; start = logs.find(addressRow, start + addressRow.size()))
             {
-                const auto candidate = logs.substr(start + scheme.size());
+                const auto candidate = logs.substr(start + addressRow.size());
                 const auto end = std::ranges::find_if(candidate, [](char c) { return !IsLabelCharacter(c) && c != '.'; });
                 // A final partial line can arrive on a following pipe read.
                 if (end != candidate.end())
@@ -233,14 +234,20 @@ namespace Online
                 CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
                 environment.data(),
                 exe.parent_path().c_str(), &startup.StartupInfo, &child))
+            {
+                const DWORD code = GetLastError();
+                error = L"Windows no pudo abrir cloudflared.exe (c\u00f3digo " + std::to_wstring(code) + L").";
                 return {};
+            }
             result->process.reset(child.hProcess);
             result->pid = child.dwProcessId;
             Handle thread(child.hThread);
             if (!AssignProcessToJobObject(result->job.get(), result->process.get()) ||
                 ResumeThread(thread.get()) == DWORD(-1))
             {
+                const DWORD code = GetLastError();
                 TerminateProcess(result->process.get(), 1);
+                error = L"Windows no pudo iniciar el proceso del t\u00fanel (c\u00f3digo " + std::to_wstring(code) + L").";
                 return {};
             }
             error.clear();
@@ -295,29 +302,43 @@ namespace Online
             error = port ? L"Se cancel\u00f3 el t\u00fanel." : L"Primero abr\u00ed la sala para iniciar el t\u00fanel.";
             return {};
         }
-        auto process = Process::Start(L"tunnel --no-autoupdate --protocol http2 --url tcp://127.0.0.1:" +
+        auto process = Process::Start(L"tunnel --config= --no-autoupdate --protocol auto --retries 3 --url tcp://127.0.0.1:" +
             std::to_wstring(port), error);
         if (!process) return {};
 
         constexpr size_t maxLog = 8192;
-        const auto deadline = Clock::now() + 25s;
+        const auto deadline = Clock::now() + 60s;
         std::array<char, 4096> chunk{};
         std::string logs;
         std::string hostname;
         bool registered = false;
-        while (!stop.stop_requested() && Clock::now() < deadline && process->Alive())
+        while (!stop.stop_requested() && Clock::now() < deadline)
         {
-            logs.append(process->Read(chunk));
+            const auto text = process->Read(chunk);
+            logs.append(text);
             if (logs.size() > maxLog) logs.erase(0, logs.size() - maxLog);
             if (!registered) registered = logs.find("Registered tunnel connection") != logs.npos;
             if (hostname.empty()) hostname = QuickHostname(logs);
-            if (registered && !hostname.empty() &&
-                CanResolve(hostname, std::min(deadline, Clock::now() + 1s), stop) && process->Alive())
+            if (registered && !hostname.empty() && process->Alive())
                 return std::unique_ptr<RoomTunnel>(new RoomTunnel(std::move(process), std::move(hostname), port));
-            WaitForSingleObject(process->process.get(), 75);
+            if (text.empty())
+            {
+                if (!process->Alive()) break;
+                WaitForSingleObject(process->process.get(), 75);
+            }
         }
-        error = stop.stop_requested() ? L"Se cancel\u00f3 el t\u00fanel."
-            : L"No se pudo publicar la sala de Internet. Revis\u00e1 tu conexi\u00f3n y volv\u00e9 a intentar.";
+        if (stop.stop_requested())
+            error = L"Se cancel\u00f3 el t\u00fanel.";
+        else if (logs.find("quick tunnel provisioning failed with status 429") != logs.npos)
+            error = L"Cloudflare limit\u00f3 las solicitudes (429). Esper\u00e1 un momento y reintent\u00e1.";
+        else if (logs.find("x509:") != logs.npos)
+            error = L"El t\u00fanel no pudo validar el certificado de Cloudflare.";
+        else if (hostname.empty())
+            error = L"Cloudflare no entreg\u00f3 una direcci\u00f3n para la sala. Volv\u00e9 a intentar.";
+        else if (!registered)
+            error = L"El t\u00fanel no lleg\u00f3 a Cloudflare (salida 7844). Prob\u00e1 que la sala la cree tu amigo.";
+        else
+            error = L"El t\u00fanel de Cloudflare se cerr\u00f3 antes de publicar la sala. Volv\u00e9 a intentar.";
         return {};
     }
 
@@ -326,6 +347,21 @@ namespace Online
         if (!IsHostname(hostname) || stop.stop_requested())
         {
             error = stop.stop_requested() ? L"Se cancel\u00f3 el t\u00fanel." : L"El nombre del t\u00fanel no es v\u00e1lido.";
+            return {};
+        }
+        // Test publication on the guest's own network. The host can have a different DNS cache.
+        const auto dnsDeadline = Clock::now() + 30s;
+        bool resolved = false;
+        while (!stop.stop_requested() && Clock::now() < dnsDeadline)
+        {
+            resolved = CanResolve(hostname, std::min(dnsDeadline, Clock::now() + 1s), stop);
+            if (resolved) break;
+            std::this_thread::sleep_for(250ms);
+        }
+        if (!resolved)
+        {
+            error = stop.stop_requested() ? L"Se cancel\u00f3 el t\u00fanel."
+                : L"Tu PC no encuentra la direcci\u00f3n de la sala (DNS). Ped\u00ed un c\u00f3digo nuevo.";
             return {};
         }
         const std::wstring name(hostname.begin(), hostname.end());

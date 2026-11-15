@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.6-tunnel/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.7-tunnel/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.6-tunnel/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.6-tunnel)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.7-tunnel/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.7-tunnel)
 
 ## Cómo arrancar
 
@@ -44,6 +44,7 @@ También podés usar **En esta red** en la misma red local. **IP directa** usa l
 - **La ISO no pasa la verificación.** Revisá que sea la edición **Europa (Es,Pt) de Xbox 360**. El asistente verifica que coincida con la versión usada para compilar.
 - **El lobby de F1 no conecta.** Revisá que hayas extraído el ZIP completo, incluida la carpeta `Soporte\Python`, y volvé a abrir PES.
 - **La prueba por código da un error de red.** Anotá el número que muestra. **10049** indica que la IP que escribió el anfitrión no está disponible en su PC. **10061** indica que la conexión fue rechazada. Confirmá que la sala siga abierta y revisá la IP y el puerto. [Códigos de Winsock](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2).
+- **El túnel no llega a Cloudflare.** Prueben que el otro jugador cree la sala. La PC anfitriona necesita llegar a Cloudflare por el puerto saliente 7844. La PC que se une usa HTTPS por el puerto 443. [Puertos de Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
 
 ## Código y créditos
 

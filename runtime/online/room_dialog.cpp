@@ -188,7 +188,7 @@ namespace Online
                         uint16_t advertisedPort = room->Port();
                         if (relayed)
                         {
-                            Status establishing{ Phase::Hosting, L"Abriendo el t\u00fanel de Internet\u2026", {}, true };
+                            Status establishing{ Phase::Hosting, L"Abriendo el t\u00fanel de Internet\u2026 Puede tardar hasta un minuto.", {}, true };
                             establishing.localName = name;
                             Update(revision, std::move(establishing));
                             std::wstring error;
