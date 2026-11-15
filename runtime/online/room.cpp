@@ -45,16 +45,18 @@ namespace Online
             "La sala no respondi\u00f3. Revisen la IPv4, el puerto TCP, el firewall y el router.";
         constexpr std::array<uint8_t, 4> kRoomTag{ 'P', '1', '3', 'R' };
         constexpr std::array<uint8_t, 4> kInputTag{ 'P', '1', '3', 'I' };
+        constexpr std::array<uint8_t, 4> kTeamsMismatchTag{ 'P', '1', '3', 'T' };
         constexpr std::array<uint8_t, 4> kPingTag{ 'P', '1', '3', 'P' };
         constexpr std::array<uint8_t, 4> kPongTag{ 'P', '1', '3', 'A' };
-        constexpr uint16_t kProtocolVersion = 3;
+        constexpr uint16_t kLatencyProtocolVersion = 3;
+        constexpr uint16_t kInputProtocolVersion = 4;
         constexpr uint8_t kHostRole = 1;
         constexpr uint8_t kGuestRole = 2;
         constexpr size_t kSecretSize = 16;
         constexpr size_t kMaxNameBytes = 3 * kMaxPlayerNameLength;
         using Secret = std::array<uint8_t, kSecretSize>;
         using Handshake = std::array<uint8_t, 8 + kSecretSize>;
-        using InputMessage = std::array<uint8_t, 20>;
+        using InputMessage = std::array<uint8_t, 24>;
         using PingMessage = std::array<uint8_t, 8>;
 
         void Store16(std::span<uint8_t> bytes, uint16_t value)
@@ -125,7 +127,7 @@ namespace Online
         {
             Handshake message{};
             std::ranges::copy(kRoomTag, message.begin());
-            Store16(std::span(message).subspan(4), kProtocolVersion);
+            Store16(std::span(message).subspan(4), mode == Room::Mode::Input ? kInputProtocolVersion : kLatencyProtocolVersion);
             message[6] = role;
             message[7] = static_cast<uint8_t>(mode);
             return message;
@@ -134,7 +136,7 @@ namespace Online
         bool ValidHandshake(const Handshake& message, uint8_t role, Room::Mode mode)
         {
             return std::ranges::equal(kRoomTag, std::span(message).first<4>())
-                && Load16(std::span(message).subspan(4)) == kProtocolVersion
+                && Load16(std::span(message).subspan(4)) == (mode == Room::Mode::Input ? kInputProtocolVersion : kLatencyProtocolVersion)
                 && message[6] == role && message[7] == static_cast<uint8_t>(mode);
         }
 
@@ -223,7 +225,7 @@ namespace Online
             return Wait::Cancelled;
         }
 
-        InputMessage MakeInput(uint32_t frame, const PadInput& pad)
+        InputMessage MakeInput(uint32_t frame, const PadInput& pad, uint32_t matchTeams)
         {
             InputMessage message{};
             std::ranges::copy(kInputTag, message.begin());
@@ -236,10 +238,11 @@ namespace Online
             Store16(bytes.subspan(14), std::bit_cast<uint16_t>(pad.ly));
             Store16(bytes.subspan(16), std::bit_cast<uint16_t>(pad.rx));
             Store16(bytes.subspan(18), std::bit_cast<uint16_t>(pad.ry));
+            Store32(bytes.subspan(20), matchTeams);
             return message;
         }
 
-        bool ParseInput(const InputMessage& message, uint32_t frame, PadInput& pad)
+        bool ParseInput(const InputMessage& message, uint32_t frame, PadInput& pad, uint32_t& matchTeams)
         {
             auto bytes = std::span(message);
             if (!std::ranges::equal(kInputTag, bytes.first<4>()) || Load32(bytes.subspan(4)) != frame) return false;
@@ -250,6 +253,7 @@ namespace Online
                 std::bit_cast<int16_t>(Load16(bytes.subspan(16))),
                 std::bit_cast<int16_t>(Load16(bytes.subspan(18)))
             };
+            matchTeams = Load32(bytes.subspan(20));
             return true;
         }
     }
@@ -653,7 +657,8 @@ namespace Online
         return true;
     }
 
-    bool Room::ExchangeInput(uint32_t frame, const PadInput& local, PadInput& remote, std::stop_token stop)
+    bool Room::ExchangeInput(uint32_t frame, const PadInput& sample, PadInput& local, PadInput& remote,
+        std::stop_token stop, uint32_t matchTeams)
     {
         error_.clear();
         if (!Connected() || mode_ != Mode::Input)
@@ -661,20 +666,54 @@ namespace Online
             error_ = "La sala no esta conectada.";
             return false;
         }
-        auto outgoing = MakeInput(frame, local);
+        if (frame != uint32_t(nextInputFrame_))
+        {
+            error_ = "El juego intent\u00f3 avanzar un cuadro de entrada fuera de orden.";
+            ClosePeer();
+            return false;
+        }
+
+        auto outgoing = MakeInput(frame + kInputDelayFrames, sample, matchTeams);
         InputMessage incoming{};
         const auto deadline = Clock::now() + kInputTimeout;
-        if (!Transfer(outgoing, true, deadline, stop) || !Transfer(incoming, false, deadline, stop))
+        const bool primed = nextInputFrame_ >= kInputDelayFrames;
+        if (!Transfer(outgoing, true, deadline, stop) ||
+            (primed && !Transfer(incoming, false, deadline, stop)))
         {
             ClosePeer();
             return false;
         }
-        if (!ParseInput(incoming, frame, remote))
+        PadInput peerInput{};
+        uint32_t peerMatchTeams = 0;
+        if (primed && !ParseInput(incoming, frame, peerInput, peerMatchTeams))
         {
             error_ = "Los mandos recibieron cuadros de entrada diferentes.";
             ClosePeer();
             return false;
         }
+
+        auto& queued = localInputs_[nextInputFrame_ % kInputDelayFrames];
+        if (queued.matchTeams != 0 && peerMatchTeams != 0 && queued.matchTeams != peerMatchTeams)
+        {
+            // Keep the stream open until the peer can read this same frame and report the
+            // mismatch locally. Its acknowledgement follows the inputs already in flight.
+            auto acknowledgement = MakeInput(frame, {}, 0);
+            std::ranges::copy(kTeamsMismatchTag, acknowledgement.begin());
+            const auto closeDeadline = Clock::now() + kInputTimeout;
+            if (Transfer(acknowledgement, true, closeDeadline, stop))
+            {
+                for (uint32_t pending = 0; pending <= kInputDelayFrames; ++pending)
+                    if (!Transfer(incoming, false, closeDeadline, stop) || incoming == acknowledgement) break;
+            }
+            error_ = "Los equipos de las dos PCs no coinciden. Eleg\u00ed los mismos clubes en las dos pantallas.";
+            ClosePeer();
+            return false;
+        }
+        const auto delayed = queued.pad;
+        queued = { sample, matchTeams };
+        ++nextInputFrame_;
+        local = delayed;
+        remote = peerInput;
         return true;
     }
 
@@ -788,6 +827,8 @@ namespace Online
         }
         connected_ = false;
         peerName_.clear();
+        localInputs_ = {};
+        nextInputFrame_ = 0;
         latencySequence_ = 0;
         nextProbe_ = {};
     }

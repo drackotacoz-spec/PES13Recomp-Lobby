@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <span>
@@ -28,6 +29,7 @@ namespace Online
     {
     public:
         enum class Mode : uint8_t { Input, Latency };
+        static constexpr uint32_t kInputDelayFrames = 12;
 
         explicit Room(Mode mode = Mode::Input) : mode_(mode) {}
         Room(const Room&) = delete;
@@ -41,7 +43,11 @@ namespace Online
         // A public room stays open until its owner leaves or its lobby session ends.
         bool WaitForPeer(std::stop_token stop = {}, bool expireInvitation = true);
         bool Join(std::string_view address, uint16_t port, std::string_view token, std::stop_token stop = {});
-        bool ExchangeInput(uint32_t frame, const PadInput& local, PadInput& remote, std::stop_token stop = {});
+        // Sends the physical sample for frame + kInputDelayFrames, then returns
+        // the inputs for frame. Both peers apply neutral input while priming.
+        // A zero team signature is unspecified. Nonzero signatures must agree for the frame.
+        bool ExchangeInput(uint32_t frame, const PadInput& sample, PadInput& local, PadInput& remote,
+            std::stop_token stop = {}, uint32_t matchTeams = 0);
         // Repeat on the latency worker. The host schedules a probe in each direction
         // every second; a call waits cancellably until its full round finishes.
         bool MeasureLatency(std::chrono::microseconds& roundTrip, std::stop_token stop = {});
@@ -60,6 +66,12 @@ namespace Online
     private:
         using Clock = std::chrono::steady_clock;
         static constexpr uintptr_t kInvalidSocket = ~uintptr_t{ 0 };
+
+        struct InputSample
+        {
+            PadInput pad;
+            uint32_t matchTeams = 0;
+        };
 
         bool StartWinsock();
         bool SocketError(std::string_view reason, int code, bool loopback = false);
@@ -82,6 +94,8 @@ namespace Online
         std::string localName_;
         std::string peerName_;
         std::string error_;
+        std::array<InputSample, kInputDelayFrames> localInputs_{};
+        uint64_t nextInputFrame_ = 0;
         uint32_t latencySequence_ = 0;
         Clock::time_point nextProbe_{};
     };

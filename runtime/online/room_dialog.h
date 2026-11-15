@@ -26,4 +26,5 @@ namespace Online
     Lobby::PublicInput PublicInputStatus(std::wstring& error);
     std::wstring RoomPlayerName(bool local);
     void ReportRoomFailure(const std::shared_ptr<Room>& room, std::string_view reason);
+    std::wstring TakeRoomFailureNotice();
 }

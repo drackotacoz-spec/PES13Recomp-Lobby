@@ -25,7 +25,7 @@ namespace
     std::array<Log, 3> g_logs{{
         { L"cuadros.csv", "PES_FRAME_TRACE",
             "guest_frame_field_before,guest_frame_field_after,sequence,exchanged,home_buttons,away_buttons,"
-            "match_start,match_remaining,game_random,gpu_frame\n" },
+            "match_start,match_remaining,game_random,gpu_frame,home_team,away_team\n" },
         { L"mandos.csv", "PES_PAD_TRACE", nullptr },
         { L"partido.csv", "PES_MATCH_TRACE",
             "callback,guest_thread,caller,gpu_frame,manager_before,step_before,clock_before,period_start_before,rng_before,period_before,"

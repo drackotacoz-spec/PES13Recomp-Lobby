@@ -8,6 +8,8 @@
 #include <ppc_recomp_shared.h>
 #include <gpu/gpu.h>
 
+#include <windows.h>
+
 #include <array>
 #include <cstdio>
 #include <map>
@@ -23,6 +25,9 @@ namespace
     constexpr uint32_t kMatchTicksRemaining = 0x836F6F74;
     constexpr uint32_t kMatchTicksAtStart = 0x836F6F7C;
     constexpr uint32_t kGameRandom = 0x8350886E;
+    // ES/PT exhibition uses the +2 halfword of each descriptor when resolving the confirmed teams.
+    constexpr uint32_t kExhibitionTeams = 0x83507ED0;
+    constexpr uint32_t kSelectedTeam = 2;
 
     struct RoomPads
     {
@@ -35,6 +40,7 @@ namespace
         std::weak_ptr<Online::Room> room;
         RoomPads input;
         uint32_t sequence = 0;
+        uint32_t matchTeams = 0;
         bool active = false;
     };
 
@@ -46,6 +52,37 @@ namespace
     {
         const uint32_t object = Memory::Load32(kFrameObject);
         return object ? Memory::Load32(object + kFrameOffset) : 0;
+    }
+
+    bool ReadableGuestRange(uint32_t address, size_t length)
+    {
+        if (!address || uint64_t(address) + length > (uint64_t{1} << 32)) return false;
+        const auto* pointer = Memory::Translate(address);
+        MEMORY_BASIC_INFORMATION info{};
+        if (!VirtualQuery(pointer, &info, sizeof(info)) || info.State != MEM_COMMIT ||
+            (info.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+            return false;
+        const auto offset = reinterpret_cast<uintptr_t>(pointer) - reinterpret_cast<uintptr_t>(info.BaseAddress);
+        return offset < info.RegionSize && length <= info.RegionSize - offset;
+    }
+
+    uint32_t ReadMatchTeams()
+    {
+        // These descriptors retain the previous or default pair while the menu is still selecting teams.
+        const auto start = Memory::Load32(kMatchTicksAtStart);
+        const auto remaining = Memory::Load32(kMatchTicksRemaining);
+        if (!remaining || remaining >= start) return 0;
+
+        const auto teams = Memory::Load32(kExhibitionTeams);
+        if (!ReadableGuestRange(teams, 2 * sizeof(uint32_t))) return 0;
+        const auto local = Memory::Load32(teams);
+        const auto visitor = Memory::Load32(teams + sizeof(uint32_t));
+        constexpr auto descriptorBytes = kSelectedTeam + sizeof(uint16_t);
+        if (!ReadableGuestRange(local, descriptorBytes) || !ReadableGuestRange(visitor, descriptorBytes)) return 0;
+        const auto home = Memory::Load16(local + kSelectedTeam);
+        const auto away = Memory::Load16(visitor + kSelectedTeam);
+        const auto concrete = [](uint16_t id) { return id && id != 0xffff && id != 4096 && id != 4097; };
+        return concrete(home) && concrete(away) ? (uint32_t(home) << 16) | away : 0;
     }
 
     void SetPad(size_t user, const Online::PadInput& input)
@@ -65,9 +102,10 @@ namespace
             g_frame = {};
             g_frame.room = room;
         }
-        const auto local = Online::ReadLocalPad();
-        Online::PadInput remote{};
-        if (!room->ExchangeInput(g_frame.sequence, local, remote))
+        const auto sample = Online::ReadLocalPad();
+        Online::PadInput local{}, remote{};
+        g_frame.matchTeams = ReadMatchTeams();
+        if (!room->ExchangeInput(g_frame.sequence, sample, local, remote, {}, g_frame.matchTeams))
         {
             Online::ReportRoomFailure(room, room->Error());
             return;
@@ -93,6 +131,7 @@ namespace Online
     {
         FILE* trace = NetworkTrialLog(TrialLog::Frames);
         const uint32_t before = trace ? GuestFrameCount() : 0;
+        g_frame.matchTeams = 0;
         if (NetworkTrialInputEnabled())
         {
             if (const auto room = ConnectedInputRoom())
@@ -103,11 +142,12 @@ namespace Online
         g_frame.active = false;
         if (trace)
         {
-            std::fprintf(trace, "%u,%u,%u,%u,%04x,%04x,%u,%u,%u,%llu\n",
+            std::fprintf(trace, "%u,%u,%u,%u,%04x,%04x,%u,%u,%u,%llu,%u,%u\n",
                 before, GuestFrameCount(), g_frame.sequence, unsigned(exchanged),
                 unsigned(g_frame.input.pads[0].buttons), unsigned(g_frame.input.pads[1].buttons),
                 Memory::Load32(kMatchTicksAtStart), Memory::Load32(kMatchTicksRemaining), unsigned(Memory::Load8(kGameRandom)),
-                static_cast<unsigned long long>(Gpu::FrameCount()));
+                static_cast<unsigned long long>(Gpu::FrameCount()),
+                g_frame.matchTeams >> 16, g_frame.matchTeams & 0xffff);
             std::fflush(trace);
         }
     }

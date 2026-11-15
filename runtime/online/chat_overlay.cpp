@@ -1,4 +1,5 @@
 #include "chat_overlay.h"
+#include "room_dialog.h"
 #include "chat_reactions.h"
 #include "lobby_client.h"
 
@@ -417,6 +418,8 @@ namespace Online
             g_chat.lastError = state.chatError;
             if (!state.chatError.empty()) ShowNotice(g_chat.toast, {}, state.chatError);
         }
+        if (auto failure = TakeRoomFailureNotice(); !failure.empty())
+            ShowNotice(g_chat.toast, {}, std::move(failure));
         PositionNotice(g_chat.sticker);
         PositionNotice(g_chat.toast);
     }

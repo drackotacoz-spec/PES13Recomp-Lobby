@@ -56,6 +56,7 @@ namespace Online
             uint64_t revision = 0;
             bool experimental = false;
             bool publicInput = false;
+            bool failureNotice = false;
         };
 
         Session g_session;
@@ -86,6 +87,7 @@ namespace Online
             g_session.stop.request_stop();
             g_session.room.reset();
             g_session.publicInput = false;
+            g_session.failureNotice = false;
             g_session.status = { Phase::Idle, L"Sala cerrada.", {} };
         }
 
@@ -147,6 +149,7 @@ namespace Online
             ++g_session.revision;
             g_session.stop = std::stop_source{};
             g_session.publicInput = publicInput;
+            g_session.failureNotice = false;
             if (publicInput) g_session.experimental = true;
             g_session.status = hosting
                 ? Status{ Phase::Hosting, L"Creando sala\u2026", {}, true }
@@ -1100,5 +1103,14 @@ namespace Online
             return;
         g_session.room.reset();
         g_session.status = { Phase::Error, reason.empty() ? L"Se cerr\u00f3 la conexi\u00f3n con tu amigo." : Wide(reason), {} };
+        g_session.failureNotice = g_session.experimental && !g_session.publicInput;
+    }
+
+    std::wstring TakeRoomFailureNotice()
+    {
+        std::lock_guard lock(g_session.mutex);
+        if (!g_session.failureNotice) return {};
+        g_session.failureNotice = false;
+        return g_session.status.message;
     }
 }

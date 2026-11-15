@@ -5,6 +5,7 @@
 #include <kernel/thread.h>
 
 #include "room_dialog.h"
+#include "room.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -39,7 +40,8 @@ namespace
 
     uint32_t NicknameForController(uint32_t controller)
     {
-        const bool local = controller == 0;
+        const auto room = Online::ConnectedInputRoom();
+        const bool local = controller == (room && !room->IsHost() ? 1u : 0u);
         auto name = Online::RoomPlayerName(local);
         if (local && name.empty()) name = Online::LoadPlayerName();
         const auto nickname = Online::PlayerNameUtf8(name);
