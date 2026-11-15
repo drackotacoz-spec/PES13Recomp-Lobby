@@ -5,6 +5,8 @@
 #include "room.h"
 #include "player_profile.h"
 
+#include <commctrl.h>
+
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -91,6 +93,7 @@ namespace Online
             std::string address;
             uint16_t port = 0;
             std::string token;
+            bool internet = false;
         };
 
         bool ParseCode(std::string_view code, Destination& destination)
@@ -153,14 +156,37 @@ namespace Online
                     std::wstring code;
                     if (hosting && !listening)
                     {
-                        if (!room->Host(destination.address, experimental ? kExperimentalMatchPort : destination.port))
+                        if (stop.stop_requested()) return;
+                        std::string address = destination.address.empty() ? DetectLocalIPv4() : destination.address;
+                        if (address == "localhost") address = "127.0.0.1";
+                        if (destination.internet && address.starts_with("127."))
+                        {
+                            Update(revision, { Phase::Error, L"Conect\u00e1 esta PC por Wi-Fi o cable para crear una sala por Internet.", {} });
+                            return;
+                        }
+                        const uint16_t port = experimental || destination.internet ? kExperimentalMatchPort : destination.port;
+                        if (!room->Host(address, port))
                         {
                             Update(revision, { Phase::Error, Wide(room->Error()), {} });
                             return;
                         }
-                        const std::string address = destination.address == "localhost" ? "127.0.0.1" : destination.address;
+                        if (destination.internet)
+                        {
+                            Status detecting{ Phase::Hosting, L"Detectando la IPv4 p\u00fablica\u2026", {}, true };
+                            detecting.localName = name;
+                            Update(revision, std::move(detecting));
+                            address = DetectPublicIPv4();
+                            if (stop.stop_requested()) return;
+                            if (address.empty())
+                            {
+                                Update(revision, { Phase::Error, L"No se pudo detectar la IPv4 p\u00fablica. Revis\u00e1 Internet y reintent\u00e1.", {} });
+                                return;
+                            }
+                        }
                         code = Wide(address + ":" + std::to_string(room->Port()) + "/" + room->Token());
-                        Status waiting{ Phase::Hosting, L"Esperando a tu rival\u2026", code, true };
+                        Status waiting{ Phase::Hosting, destination.internet
+                            ? L"Esperando a tu rival. El router debe redirigir TCP 28513 a esta PC."
+                            : L"Esperando a tu rival\u2026", code, true };
                         waiting.localName = name;
                         Update(revision, std::move(waiting));
                     }
@@ -219,6 +245,7 @@ namespace Online
         constexpr int kSaveName = 108;
         constexpr int kLocalNameLabel = 109;
         constexpr int kRemoteNameLabel = 110;
+        constexpr int kCreateInternet = 111;
         constexpr UINT_PTR kRefreshTimer = 1;
 
         constexpr COLORREF kBackground = RGB(10, 10, 12);
@@ -240,6 +267,7 @@ namespace Online
             HWND shareCode = nullptr;
             HWND status = nullptr;
             HWND create = nullptr;
+            HWND createInternet = nullptr;
             HWND join = nullptr;
             HWND copy = nullptr;
             HWND stop = nullptr;
@@ -357,7 +385,7 @@ namespace Online
                 Box(dc, 28, 173, 337, 182, kSurface);
                 Box(dc, 383, 173, 337, 182, kSurface);
                 Label(dc, L"Crear sala", g_dialog.sectionFont, kText, Bounds(44, 183, 300, 29));
-                Label(dc, L"IPv4 local de tu PC", g_dialog.smallFont, kMuted, Bounds(44, 218, 300, 17));
+                Label(dc, L"IPv4 local (opcional)", g_dialog.smallFont, kMuted, Bounds(44, 218, 300, 17));
                 Label(dc, L"Unirte a una sala", g_dialog.sectionFont, kText, Bounds(399, 183, 300, 29));
                 Label(dc, L"C\u00f3digo de invitaci\u00f3n", g_dialog.smallFont, kMuted, Bounds(399, 218, 300, 17));
                 Box(dc, 28, 373, 692, 76, kSurface);
@@ -381,7 +409,7 @@ namespace Online
                 if (experimental)
                 {
                     if (g_dialog.host)
-                        Label(dc, L"Por Internet, us\u00e1 la IPv4 p\u00fablica en el c\u00f3digo. Conserv\u00e1 el puerto y la clave.",
+                        Label(dc, L"Compart\u00ed el c\u00f3digo completo con tu rival.",
                             g_dialog.bodyFont, kMuted, Bounds(44, 391, 656, 24));
                     Label(dc, L"Prueba de mandos \u00b7 Sin medici\u00f3n de ping", g_dialog.smallFont, kMuted, Bounds(44, 421, 656, 22));
                 }
@@ -425,7 +453,8 @@ namespace Online
             const bool enabled = !(item.itemState & ODS_DISABLED);
             const bool pressed = item.itemState & ODS_SELECTED;
             const bool focused = item.itemState & ODS_FOCUS;
-            const bool primary = item.CtlID == kCreate || item.CtlID == kJoin || item.CtlID == kCopy || item.CtlID == kSaveName;
+            const bool primary = item.CtlID == kCreate || item.CtlID == kCreateInternet || item.CtlID == kJoin ||
+                item.CtlID == kCopy || item.CtlID == kSaveName;
             const bool stop = item.CtlID == kStop;
             const COLORREF fill = enabled && pressed ? kRed : enabled && primary ? kText : kField;
             const COLORREF color = !enabled ? kMuted : pressed || primary ? kBackground : stop ? kRed : kText;
@@ -508,6 +537,7 @@ namespace Online
             if (layoutChanged)
             {
                 ShowWindow(g_dialog.create, active ? SW_HIDE : SW_SHOW);
+                ShowWindow(g_dialog.createInternet, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.join, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.hostAddress, active ? SW_HIDE : SW_SHOW);
                 ShowWindow(g_dialog.joinCode, active ? SW_HIDE : SW_SHOW);
@@ -669,12 +699,11 @@ namespace Online
                 switch (LOWORD(wParam))
                 {
                 case kCreate:
+                case kCreateInternet:
                 {
                     auto address = ReadAscii(g_dialog.hostAddress);
-                    if (address.empty())
-                        ShowInputError(L"Escrib\u00ed la IPv4 local de tu PC. Us\u00e1 127.0.0.1 para probar en la misma PC.");
-                    else if (auto name = SaveDialogName(false); !name.empty())
-                        StartRoom(true, { std::move(address), 0, {} }, std::move(name));
+                    if (auto name = SaveDialogName(false); !name.empty())
+                        StartRoom(true, { std::move(address), 0, {}, LOWORD(wParam) == kCreateInternet }, std::move(name));
                     break;
                 }
                 case kJoin:
@@ -789,8 +818,10 @@ namespace Online
                     x, y, width, height, id);
             };
 
-            g_dialog.hostAddress = edit(L"127.0.0.1", 45, 246, 303, 15, 0);
-            g_dialog.create = button(L"Crear sala", 44, 298, 305, 39, kCreate);
+            g_dialog.hostAddress = edit(L"", 45, 246, 303, 15, 0);
+            SendMessageW(g_dialog.hostAddress, EM_SETCUEBANNER, TRUE, LPARAM(L"Detectar autom\u00e1ticamente"));
+            g_dialog.create = button(L"En esta red", 44, 298, 150, 39, kCreate);
+            g_dialog.createInternet = button(L"Por Internet", 199, 298, 150, 39, kCreateInternet);
             g_dialog.joinCode = edit(L"", 400, 246, 303, 128, 0);
             g_dialog.join = button(L"Unirme", 399, 298, 305, 39, kJoin);
             g_dialog.shareCode = edit(L"", 45, 332, 372, 128, ES_READONLY);
@@ -856,7 +887,7 @@ namespace Online
         }
         if (changedMode)
         {
-            SetWindowTextW(g_dialog.hostAddress, L"127.0.0.1");
+            SetWindowTextW(g_dialog.hostAddress, L"");
             SetWindowTextW(g_dialog.joinCode, L"");
         }
         RefreshDialog();

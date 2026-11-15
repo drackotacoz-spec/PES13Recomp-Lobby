@@ -9,6 +9,10 @@
 
 namespace Online
 {
+    std::string DetectLocalIPv4();
+    // Makes an HTTPS request to ipify. Call from a worker. A failure returns an empty address.
+    std::string DetectPublicIPv4();
+
     struct PadInput
     {
         uint16_t buttons = 0;
@@ -58,7 +62,7 @@ namespace Online
         static constexpr uintptr_t kInvalidSocket = ~uintptr_t{ 0 };
 
         bool StartWinsock();
-        bool SocketError(std::string_view reason, int code);
+        bool SocketError(std::string_view reason, int code, bool loopback = false);
         bool Transfer(std::span<uint8_t> bytes, bool sending, Clock::time_point deadline, std::stop_token stop);
         bool SendName(Clock::time_point deadline, std::stop_token stop);
         bool ReceiveName(std::string& name, Clock::time_point deadline, std::stop_token stop);

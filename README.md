@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.3-updates/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.4-address/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.3-updates/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.3-updates)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.4-address/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.4-address)
 
 ## Cómo arrancar
 
@@ -16,7 +16,7 @@ El ZIP trae Python portátil para el lobby. La preparación se hace desde la ven
 
 Si venís de la **v0.4.0**, cerrá el juego y extraé el ZIP nuevo sobre su carpeta. Abrí **PES 2013.exe** y tocá **Actualizar juego** para aprovechar la ISO y la compilación que ya tenés.
 
-Con la **v0.5.3**, abrí **F1 → Buscar actualizaciones**. Si hay una versión nueva, cerrá la ventana del juego, volvé al lanzador y tocá **Instalar actualización**. El lanzador verifica la descarga de GitHub y solo compila las partes que cambiaron. Si cambia el recompilador o su configuración, puede volver a generar código a partir de tu ISO ya preparada.
+Desde la **v0.5.3**, abrí **F1 → Buscar actualizaciones**. Si hay una versión nueva, cerrá la ventana del juego, volvé al lanzador y tocá **Instalar actualización**. El lanzador verifica la descarga de GitHub y solo compila las partes que cambiaron. Si cambia el recompilador o su configuración, puede volver a generar código a partir de tu ISO ya preparada.
 
 ## Probá un amistoso desde una sala pública
 
@@ -24,7 +24,9 @@ Con la **v0.5.3**, abrí **F1 → Buscar actualizaciones**. Si hay una versión 
 2. Apretá **F1** en cada ventana y conectate con apodos distintos. En una elegí **Crear sala pública**. En la otra, elegí la sala de la lista y tocá **Unirme**. PES conecta los mandos automáticamente.
 3. Cuando diga **Conectados**, volvé al juego, asigná **Local** y **Visitante** y verificá que las dos copias muestren los mismos equipos. Si se desincronizan, los CSV se guardan solos en `registros-red`.
 
-El lobby automático de esta versión funciona en la misma PC. Para probar entre dos PCs, **F1 → Probar amistoso por red** abre el modo experimental por código. El archivo **PRUEBA DE RED.txt** explica cómo probar desde dos casas.
+El lobby automático de esta versión funciona en la misma PC. Para probar entre dos PCs, abrí **F1 → Probar amistoso por red**. Dejá vacía la IPv4 y elegí **En esta red** para usar la dirección local o **Por Internet** para que el juego consulte la IPv4 pública a través de ipify. Pasale el código completo a tu amigo para que lo pegue y toque **Unirme**. [Servicio de detección de IP](https://www.ipify.org/)
+
+Para conectarse desde otra casa, el router del anfitrión tiene que redirigir el puerto TCP 28513 a su PC y Windows tiene que permitir la entrada al juego. El archivo **PRUEBA DE RED.txt** explica las condiciones para esa prueba.
 
 ## Probá el lobby y el chat
 

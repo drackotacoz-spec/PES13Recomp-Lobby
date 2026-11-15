@@ -11,16 +11,22 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <bcrypt.h>
+#include <iphlpapi.h>
+#include <winhttp.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <condition_variable>
 #include <cstring>
+#include <memory>
 #include <mutex>
+#include <vector>
 
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Bcrypt.lib")
+#pragma comment(lib, "Iphlpapi.lib")
+#pragma comment(lib, "Winhttp.lib")
 
 namespace Online
 {
@@ -152,6 +158,30 @@ namespace Online
             return InetNtopA(AF_INET, &endpoint.sin_addr, address, sizeof(address)) ? address : "";
         }
 
+        bool IsLocalRoomAddress(uint32_t ipv4)
+        {
+            const auto first = ipv4 >> 24;
+            return first > 0 && first < 224 && first != 127 && (ipv4 >> 16) != 0xA9FE;
+        }
+
+        bool IsPublicAddress(uint32_t ipv4)
+        {
+            const auto first = ipv4 >> 24;
+            const auto network16 = ipv4 >> 16;
+            const auto network24 = ipv4 >> 8;
+            // Reject private, shared, local, documentation and protocol-only ranges.
+            return IsLocalRoomAddress(ipv4) && first != 10 && (ipv4 >> 22) != 0x191 &&
+                network16 != 0xC0A8 && (ipv4 >> 20) != 0xAC1 && (ipv4 >> 17) != 0x6309 &&
+                network24 != 0xC00000 && network24 != 0xC00002 && network24 != 0xC05863 &&
+                network24 != 0xC63364 && network24 != 0xCB0071;
+        }
+
+        struct CloseHttpHandle
+        {
+            void operator()(void* handle) const { WinHttpCloseHandle(handle); }
+        };
+        using HttpHandle = std::unique_ptr<void, CloseHttpHandle>;
+
         PingMessage MakePing(const std::array<uint8_t, 4>& tag, uint32_t sequence)
         {
             PingMessage message{};
@@ -224,6 +254,105 @@ namespace Online
         }
     }
 
+    std::string DetectLocalIPv4()
+    {
+        constexpr std::string_view loopback = "127.0.0.1";
+        constexpr ULONG flags = GAA_FLAG_INCLUDE_GATEWAYS | GAA_FLAG_SKIP_ANYCAST |
+            GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+        ULONG capacity = 15'000;
+        std::vector<uint8_t> buffer;
+        IP_ADAPTER_ADDRESSES* adapters = nullptr;
+        ULONG error = ERROR_BUFFER_OVERFLOW;
+        for (int attempt = 0; attempt < 3 && error == ERROR_BUFFER_OVERFLOW && capacity <= 1024 * 1024; ++attempt)
+        {
+            buffer.resize(capacity);
+            adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+            error = GetAdaptersAddresses(AF_INET, flags, nullptr, adapters, &capacity);
+        }
+        if (error != NO_ERROR) return std::string(loopback);
+
+        const sockaddr_in* best = nullptr;
+        int bestScore = -1;
+        ULONG bestMetric = 0;
+        for (const auto* adapter = adapters; adapter; adapter = adapter->Next)
+        {
+            if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+                continue;
+            const bool localNetwork = adapter->IfType == IF_TYPE_ETHERNET_CSMACD || adapter->IfType == IF_TYPE_IEEE80211;
+            bool hasGateway = false;
+            for (const auto* gateway = adapter->FirstGatewayAddress; gateway; gateway = gateway->Next)
+            {
+                if (const auto* address = gateway->Address.lpSockaddr; address && address->sa_family == AF_INET)
+                {
+                    hasGateway = true;
+                    break;
+                }
+            }
+            const int score = int(localNetwork) * 2 + int(hasGateway);
+            if (score < bestScore || (score == bestScore && adapter->Ipv4Metric >= bestMetric))
+                continue;
+            for (const auto* unicast = adapter->FirstUnicastAddress; unicast; unicast = unicast->Next)
+            {
+                const auto& entry = unicast->Address;
+                if (unicast->DadState != IpDadStatePreferred || !entry.lpSockaddr ||
+                    entry.iSockaddrLength < sizeof(sockaddr_in) || entry.lpSockaddr->sa_family != AF_INET)
+                    continue;
+                const auto* address = reinterpret_cast<const sockaddr_in*>(entry.lpSockaddr);
+                if (!IsLocalRoomAddress(ntohl(address->sin_addr.s_addr)))
+                    continue;
+                best = address;
+                bestScore = score;
+                bestMetric = adapter->Ipv4Metric;
+                break;
+            }
+        }
+        const std::string address = best ? AddressText(*best) : "";
+        return address.empty() ? std::string(loopback) : address;
+    }
+
+    std::string DetectPublicIPv4()
+    {
+        HttpHandle session(WinHttpOpen(L"PES13/1", WINHTTP_ACCESS_TYPE_NO_PROXY, nullptr, nullptr, 0));
+        if (!session || !WinHttpSetTimeouts(session.get(), 1500, 2500, 2000, 2500)) return {};
+        HttpHandle connection(WinHttpConnect(session.get(), L"api.ipify.org", INTERNET_DEFAULT_HTTPS_PORT, 0));
+        if (!connection) return {};
+        HttpHandle request(WinHttpOpenRequest(connection.get(), L"GET", L"/", nullptr,
+            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
+        if (!request) return {};
+        DWORD redirects = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+        DWORD disabled = WINHTTP_DISABLE_AUTHENTICATION | WINHTTP_DISABLE_COOKIES;
+        if (!WinHttpSetOption(request.get(), WINHTTP_OPTION_REDIRECT_POLICY, &redirects, sizeof(redirects)) ||
+            !WinHttpSetOption(request.get(), WINHTTP_OPTION_DISABLE_FEATURE, &disabled, sizeof(disabled)) ||
+            !WinHttpSendRequest(request.get(), WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+            !WinHttpReceiveResponse(request.get(), nullptr))
+            return {};
+
+        DWORD status = 0;
+        DWORD statusSize = sizeof(status);
+        if (!WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX) || status != 200)
+            return {};
+
+        std::array<char, 32> body{};
+        size_t length = 0;
+        while (length < body.size())
+        {
+            DWORD bytes = 0;
+            if (!WinHttpReadData(request.get(), body.data() + length, DWORD(body.size() - length), &bytes))
+                return {};
+            if (!bytes) break;
+            length += bytes;
+        }
+        if (!length || length == body.size()) return {};
+        std::string_view value(body.data(), length);
+        const size_t first = value.find_first_not_of(" \r\n\t");
+        if (first == value.npos) return {};
+        value = value.substr(first, value.find_last_not_of(" \r\n\t") - first + 1);
+        sockaddr_in address{};
+        if (!Address(value, 0, address) || !IsPublicAddress(ntohl(address.sin_addr.s_addr))) return {};
+        return AddressText(address);
+    }
+
     Room::~Room()
     {
         Close();
@@ -240,7 +369,7 @@ namespace Online
         return true;
     }
 
-    bool Room::SocketError(std::string_view reason, int code)
+    bool Room::SocketError(std::string_view reason, int code, bool loopback)
     {
         switch (code)
         {
@@ -251,7 +380,9 @@ namespace Online
             reason = "Windows bloque\u00f3 el puerto TCP. Revis\u00e1 si otra sala lo usa o si est\u00e1 reservado.";
             break;
         case WSAECONNREFUSED:
-            reason = "Conexi\u00f3n rechazada. Confirm\u00e1 la IPv4 y que la sala siga abierta en ese puerto TCP.";
+            reason = loopback
+                ? "Ese c\u00f3digo solo funciona en la misma PC. Ped\u00ed un c\u00f3digo nuevo a quien cre\u00f3 la sala."
+                : "Conexi\u00f3n rechazada. Confirm\u00e1 la IPv4 y que la sala siga abierta en ese puerto TCP.";
             break;
         case WSAETIMEDOUT:
             reason = kConnectTimeoutMessage;
@@ -420,6 +551,7 @@ namespace Online
             error_ = "El c\u00f3digo debe incluir una IPv4 v\u00e1lida del anfitri\u00f3n y su puerto TCP.";
             return false;
         }
+        const bool loopback = (ntohl(endpoint.sin_addr.s_addr) >> 24) == 127;
 
         const SOCKET socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (socket == INVALID_SOCKET) return SocketError("No se pudo abrir la conexion.", WSAGetLastError());
@@ -436,7 +568,7 @@ namespace Online
             const int code = WSAGetLastError();
             if (code != WSAEWOULDBLOCK)
             {
-                SocketError("No se pudo conectar con la sala.", code);
+                SocketError("No se pudo conectar con la sala.", code, loopback);
                 ClosePeer();
                 return false;
             }
@@ -445,14 +577,14 @@ namespace Online
             int size = sizeof(connectionError);
             if (result != Wait::Ready)
             {
-                if (result == Wait::Failed) SocketError("No se pudo conectar con la sala.", WSAGetLastError());
+                if (result == Wait::Failed) SocketError("No se pudo conectar con la sala.", WSAGetLastError(), loopback);
                 else if (result == Wait::Cancelled) error_ = "Conexi\u00f3n cancelada.";
                 else error_ = kConnectTimeoutMessage;
             }
             else if (getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&connectionError), &size) == SOCKET_ERROR)
                 SocketError("No se pudo comprobar la conexion.", WSAGetLastError());
             else if (connectionError)
-                SocketError("No se pudo conectar con la sala.", connectionError);
+                SocketError("No se pudo conectar con la sala.", connectionError, loopback);
             if (!error_.empty())
             {
                 ClosePeer();
