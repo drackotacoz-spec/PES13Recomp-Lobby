@@ -47,6 +47,8 @@ namespace
     thread_local FrameInputs g_frame;
     std::mutex g_latestLock;
     std::map<std::weak_ptr<Online::Room>, RoomPads, std::owner_less<>> g_latestPads;
+    std::weak_ptr<Online::Room> g_confirmedRoom;
+    uint32_t g_confirmedTeams = 0;
 
     uint32_t GuestFrameCount()
     {
@@ -68,11 +70,6 @@ namespace
 
     uint32_t ReadMatchTeams()
     {
-        // These descriptors retain the previous or default pair while the menu is still selecting teams.
-        const auto start = Memory::Load32(kMatchTicksAtStart);
-        const auto remaining = Memory::Load32(kMatchTicksRemaining);
-        if (!remaining || remaining >= start) return 0;
-
         const auto teams = Memory::Load32(kExhibitionTeams);
         if (!ReadableGuestRange(teams, 2 * sizeof(uint32_t))) return 0;
         const auto local = Memory::Load32(teams);
@@ -104,7 +101,10 @@ namespace
         }
         const auto sample = Online::ReadLocalPad();
         Online::PadInput local{}, remote{};
-        g_frame.matchTeams = ReadMatchTeams();
+        {
+            std::lock_guard lock(g_latestLock);
+            if (g_confirmedRoom.lock() == room) g_frame.matchTeams = g_confirmedTeams;
+        }
         if (!room->ExchangeInput(g_frame.sequence, sample, local, remote, {}, g_frame.matchTeams))
         {
             Online::ReportRoomFailure(room, room->Error());
@@ -127,6 +127,23 @@ namespace
 
 namespace Online
 {
+    void ClearExhibitionTeams()
+    {
+        std::lock_guard lock(g_latestLock);
+        g_confirmedRoom.reset();
+        g_confirmedTeams = 0;
+    }
+
+    void ConfirmExhibitionTeams()
+    {
+        const auto room = ConnectedInputRoom();
+        if (!room) return;
+        const auto teams = ReadMatchTeams();
+        std::lock_guard lock(g_latestLock);
+        g_confirmedRoom = room;
+        g_confirmedTeams = teams;
+    }
+
     void RunGuestFrame(PPCContext& ctx, uint8_t* base)
     {
         FILE* trace = NetworkTrialLog(TrialLog::Frames);

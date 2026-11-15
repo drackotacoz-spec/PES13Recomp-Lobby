@@ -1,8 +1,8 @@
 # ⚽ PES 2013 para Windows
 
-[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.9-red/PES13-Preview-Windows.zip)
+[![Descargar el ZIP para Windows](https://img.shields.io/badge/Descargar%20el%20ZIP-Windows%20x64-168444?style=for-the-badge&logo=github)](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.10-red/PES13-Preview-Windows.zip)
 
-[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.9-red/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.9-red)
+[Descargar PES13-Preview-Windows.zip](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/download/v0.5.10-red/PES13-Preview-Windows.zip) · [Ver la versión de prueba](https://github.com/drackotacoz-spec/PES13Recomp-Lobby/releases/tag/v0.5.10-red)
 
 ## Cómo arrancar
 
@@ -30,7 +30,7 @@ El lobby automático de esta versión funciona en la misma PC. Para probar entre
 
 También podés usar **En esta red** en la misma red local. **IP directa** usa la IPv4 pública y el puerto TCP 28513 del anfitrión si ya configuró su router. El archivo **PRUEBA DE RED.txt** explica estas opciones. [Servicio de detección de IP](https://www.ipify.org/)
 
-El amistoso de la **v0.5.9** envía los mandos 12 cuadros por adelantado. Eso agrega unos 200 ms a 60 FPS y permite seguir avanzando mientras llegan entradas por la red. Actualicen los dos antes de conectarse. En la previa comparen los equipos de **Local** y **Visitante** en ambas pantallas antes de arrancar. Cuando el reloj empieza a correr, PES cierra la sala si los clubes elegidos son distintos.
+El amistoso de la **v0.5.10** envía los mandos 12 cuadros por adelantado. Eso agrega unos 200 ms a 60 FPS y permite seguir avanzando mientras llegan entradas por la red. Actualicen los dos antes de conectarse. En la previa comparen los equipos de **Local** y **Visitante** en ambas pantallas antes de arrancar. Al cargar el partido, PES cierra la sala si detecta que los equipos elegidos son distintos.
 
 ## Probá el lobby y el chat
 

@@ -24,6 +24,7 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine(('// Window 0x{0:X8}-0x{1:X8}, {2} functions.' -f $lo, $hi, $funcs.Count))
 [void]$sb.AppendLine('#include "call_counter.h"')
 [void]$sb.AppendLine('#ifdef _WIN32')
+[void]$sb.AppendLine('#include <online/frame_probe.h>')
 [void]$sb.AppendLine('#include <online/guest_nickname.h>')
 [void]$sb.AppendLine('#include <online/match_probe.h>')
 [void]$sb.AppendLine('#endif')
@@ -36,9 +37,11 @@ foreach ($f in $funcs) { [void]$sb.AppendLine(('    0x{0:X8},' -f $f)) }
 [void]$sb.AppendLine('')
 $i = 0
 $matchProbes = @('sub_82883C50', 'sub_8286B718', 'sub_8286C030', 'sub_8286C188')
+$exhibitionHooks = @{ sub_82344090 = 'ClearExhibitionTeams'; sub_82475970 = 'ConfirmExhibitionTeams' }
 foreach ($f in $funcs) {
     $n = 'sub_{0:X8}' -f $f
     $traceMatch = $n -in $matchProbes
+    $exhibitionHook = $exhibitionHooks[$n]
     if ($n -eq 'sub_824476B8') {
         [void]$sb.AppendLine('#ifdef _WIN32')
         [void]$sb.AppendLine(('PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); Online::SetGuestText(ctx, base); }}' -f $n, $i))
@@ -47,9 +50,13 @@ foreach ($f in $funcs) {
         [void]$sb.AppendLine('#ifdef _WIN32')
         [void]$sb.AppendLine(('extern "C" PPC_FUNC(__imp__{0}); PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); Online::TraceMatchCall(0x{2:X8}, __imp__{0}, ctx, base); }}' -f $n, $i, $f))
         [void]$sb.AppendLine('#else')
+    } elseif ($exhibitionHook) {
+        [void]$sb.AppendLine('#ifdef _WIN32')
+        [void]$sb.AppendLine(('extern "C" PPC_FUNC(__imp__{0}); PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); Online::{2}(); __imp__{0}(ctx, base); }}' -f $n, $i, $exhibitionHook))
+        [void]$sb.AppendLine('#else')
     }
     [void]$sb.AppendLine(('extern "C" PPC_FUNC(__imp__{0}); PPC_FUNC({0}) {{ g_callCounters[{1}].fetch_add(1, std::memory_order_relaxed); __imp__{0}(ctx, base); }}' -f $n, $i))
-    if ($n -eq 'sub_824476B8' -or $traceMatch) { [void]$sb.AppendLine('#endif') }
+    if ($n -eq 'sub_824476B8' -or $traceMatch -or $exhibitionHook) { [void]$sb.AppendLine('#endif') }
     $i++
 }
 New-Item -ItemType Directory -Force "$root\runtime\debug" | Out-Null

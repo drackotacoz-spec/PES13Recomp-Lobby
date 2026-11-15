@@ -2,6 +2,7 @@
 // Window 0x2182807552-0x2200305664, 67159 functions.
 #include "call_counter.h"
 #ifdef _WIN32
+#include <online/frame_probe.h>
 #include <online/guest_nickname.h>
 #include <online/match_probe.h>
 #endif
@@ -73199,7 +73200,11 @@ extern "C" PPC_FUNC(__imp__sub_82343E40); PPC_FUNC(sub_82343E40) { g_callCounter
 extern "C" PPC_FUNC(__imp__sub_82343ED0); PPC_FUNC(sub_82343ED0) { g_callCounters[6028].fetch_add(1, std::memory_order_relaxed); __imp__sub_82343ED0(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82343F48); PPC_FUNC(sub_82343F48) { g_callCounters[6029].fetch_add(1, std::memory_order_relaxed); __imp__sub_82343F48(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82343F88); PPC_FUNC(sub_82343F88) { g_callCounters[6030].fetch_add(1, std::memory_order_relaxed); __imp__sub_82343F88(ctx, base); }
+#ifdef _WIN32
+extern "C" PPC_FUNC(__imp__sub_82344090); PPC_FUNC(sub_82344090) { g_callCounters[6031].fetch_add(1, std::memory_order_relaxed); Online::ClearExhibitionTeams(); __imp__sub_82344090(ctx, base); }
+#else
 extern "C" PPC_FUNC(__imp__sub_82344090); PPC_FUNC(sub_82344090) { g_callCounters[6031].fetch_add(1, std::memory_order_relaxed); __imp__sub_82344090(ctx, base); }
+#endif
 extern "C" PPC_FUNC(__imp__sub_82344670); PPC_FUNC(sub_82344670) { g_callCounters[6032].fetch_add(1, std::memory_order_relaxed); __imp__sub_82344670(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_823447B0); PPC_FUNC(sub_823447B0) { g_callCounters[6033].fetch_add(1, std::memory_order_relaxed); __imp__sub_823447B0(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82344848); PPC_FUNC(sub_82344848) { g_callCounters[6034].fetch_add(1, std::memory_order_relaxed); __imp__sub_82344848(ctx, base); }
@@ -77904,7 +77909,11 @@ extern "C" PPC_FUNC(__imp__sub_824757E8); PPC_FUNC(sub_824757E8) { g_callCounter
 extern "C" PPC_FUNC(__imp__sub_824757F0); PPC_FUNC(sub_824757F0) { g_callCounters[10732].fetch_add(1, std::memory_order_relaxed); __imp__sub_824757F0(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_824757F8); PPC_FUNC(sub_824757F8) { g_callCounters[10733].fetch_add(1, std::memory_order_relaxed); __imp__sub_824757F8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_824758B0); PPC_FUNC(sub_824758B0) { g_callCounters[10734].fetch_add(1, std::memory_order_relaxed); __imp__sub_824758B0(ctx, base); }
+#ifdef _WIN32
+extern "C" PPC_FUNC(__imp__sub_82475970); PPC_FUNC(sub_82475970) { g_callCounters[10735].fetch_add(1, std::memory_order_relaxed); Online::ConfirmExhibitionTeams(); __imp__sub_82475970(ctx, base); }
+#else
 extern "C" PPC_FUNC(__imp__sub_82475970); PPC_FUNC(sub_82475970) { g_callCounters[10735].fetch_add(1, std::memory_order_relaxed); __imp__sub_82475970(ctx, base); }
+#endif
 extern "C" PPC_FUNC(__imp__sub_82475AC8); PPC_FUNC(sub_82475AC8) { g_callCounters[10736].fetch_add(1, std::memory_order_relaxed); __imp__sub_82475AC8(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82475B18); PPC_FUNC(sub_82475B18) { g_callCounters[10737].fetch_add(1, std::memory_order_relaxed); __imp__sub_82475B18(ctx, base); }
 extern "C" PPC_FUNC(__imp__sub_82475C08); PPC_FUNC(sub_82475C08) { g_callCounters[10738].fetch_add(1, std::memory_order_relaxed); __imp__sub_82475C08(ctx, base); }
